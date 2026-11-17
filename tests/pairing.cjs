@@ -4,7 +4,7 @@ const vm=require('node:vm');
 const pako=require('../vendor/pako.js');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../app.js'),'utf8');
 const codec=source.slice(source.indexOf('function encode('),source.indexOf('async function setup('));
-const ctx=vm.createContext({pako,TextDecoder,btoa,atob,Uint8Array});vm.runInContext(codec,ctx);
+const ctx=vm.createContext({pako,TextDecoder,TextEncoder,sessionCode:"123456",btoa,atob,Uint8Array});vm.runInContext(codec,ctx);
 for(const type of ['offer','answer']){
  const original={type,sdp:'v=0\r\ns=தமிழ் voice\r\n'+ 'a=test\r\n'.repeat(300)};
  ctx.input=original;const actual=vm.runInContext('decode(encode(input))',ctx);
