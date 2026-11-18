@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -27,3 +29,9 @@ jobs:
         run: npm install --no-save --package-lock=false --ignore-scripts playwright-core@1.62.1
       - name: Test ten radios with offline camera pairing and audio
         run: node tests/browser-group.mjs
+      - name: Test updating a phone with a cached v8 installation
+        run: |
+          export TREKTALK_V8_ROOT="$RUNNER_TEMP/trektalk-v8"
+          mkdir -p "$TREKTALK_V8_ROOT"
+          git archive 8a5fa273b97c959f25645001cee16bcb6df3dce7 | tar -x -C "$TREKTALK_V8_ROOT"
+          node tests/browser-upgrade.mjs
