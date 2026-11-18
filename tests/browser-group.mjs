@@ -69,7 +69,7 @@ try{
   await host.click('#host');
   async function imageOf(p,id){await p.locator(id).waitFor({state:'visible',timeout:10000});return p.locator(id).evaluate(e=>e.toDataURL());}
   async function point(p,data){await p.evaluate(data=>window.pointAt(data),data);}
-  async function pair(guest){
+  async function pair(guest, started=false){
     await guest.click('#guest');await guest.locator('#guide').waitFor({state:'visible',timeout:8000});
     const offer=await imageOf(host,'#hostQr');
     const start=Date.now();await point(guest,offer);
@@ -77,7 +77,7 @@ try{
     await point(host,reply);
     await guest.locator('#radio').waitFor({state:'visible',timeout:15000});
     console.log('Scanned and paired through camera pipeline',{offerToReplyMs:read-start,replyToRoomMs:Date.now()-read});
-    assert.match(await guest.locator('#channelLabel').innerText(),/Waiting for the host/);
+    assert.match(await guest.locator('#channelLabel').innerText(),started ? /Listening/ : /Waiting for the host/);
   }
   await pair(iphone);await pair(third);
   assert.match(await host.locator('#pairMeta').innerText(),/2 paired/);
@@ -103,7 +103,31 @@ try{
   await third.locator('#tools summary').click();await third.click('#leave');
   await host.waitForFunction(()=>document.getElementById('roomMeta').textContent.includes('2 connected'));
   assert.equal(await iphone.locator('#targets button').count(),2);
-  console.log('PASS: offline reload, automatic pairing, retained roster, private and broadcast audio, release and leave');
+  // Reopen pairing without losing the existing radio. Refresh rotates just the pending offer.
+  await host.click('#add');
+  const oldOffer=await imageOf(host,'#hostQr');
+  await host.click('#hostCard');
+  await host.waitForFunction(old => !document.getElementById('hostCard').hidden &&
+    document.getElementById('hostQr').toDataURL() !== old,oldOffer);
+  assert.equal(await iphone.locator('#targets button').count(),2);
+  await pair(third,true);
+  for(let i=4;i<=10;i++) await pair(await phone('Hiker '+i),true);
+  await host.getByText('All 10 radios are paired.').waitFor();
+  await host.click('#go');
+  for(const page of pages) assert.equal(await page.locator('#targets button').count(),10);
+  await transmit(host,'Talk to everyone',pages.slice(1).map((_,i)=>i+1));
+  await transmit(iphone,'Talk to Hiker 10',[9]);
+
+  const key = async (p,name,event)=>p.getByRole('button',{name,exact:true})
+    .dispatchEvent(event,{key:'Enter',bubbles:true});
+  await key(iphone,'Talk to everyone','keydown');
+  await iphone.getByText('Transmitting · release to listen').waitFor();
+  await key(third,'Talk to OnePlus','keydown');
+  assert.match(await third.locator('#channelLabel').innerText(),/Receiving from iPhone/);
+  // Losing focus must release the active microphone and the shared channel.
+  await iphone.evaluate(()=>window.dispatchEvent(new Event('blur')));
+  await Promise.all(pages.map(p=>p.getByText('Listening',{exact:true}).waitFor()));
+  console.log('PASS: ten offline radios, automatic QR exchange, retained roster, targeted and group audio, contention, refresh, rejoin and focus loss');
 }catch(e){
  console.error(String(e));
  for(const p of pages)console.log(await p.evaluate(()=>({screen:document.querySelector('section:not([hidden])')?.id,hint:document.querySelector('#pairHint')?.textContent,notice:document.querySelector('#notice')?.textContent,offline:document.querySelector('#offline')?.textContent,peers:window.peerReports.map(p=>[p.connectionState,p.iceGatheringState,(p.localDescription?.sdp||'').split('\n').filter(l=>l.includes('candidate:')).length]),ctx:window.tone?.c?.state})).catch(()=>({})));

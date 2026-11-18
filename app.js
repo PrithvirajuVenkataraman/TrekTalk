@@ -39,6 +39,7 @@ class Session {
     this.connections = new Map();
     this.radioState = {mode: 'idle'};
     this.counter = 0;
+    $('pairTiming').hidden = true;
     this.scanner = new Scanner($('camera'), (text, seconds) => this.readQR(text, seconds), hint);
     if (host) {
       this.room = new Room({
@@ -159,7 +160,7 @@ class Session {
       if (!a || a.phase !== 'offer' || !text.startsWith('TK9A:' + a.invite + ':')) return;
       const decoded = unpack(text);
       if (!decoded) return;
-      this.lastScan = seconds;
+      a.readAt = performance.now();
       a.phase = 'linking';
       hint('Reply read. Connecting over the hotspot…');
       a.timeout = setTimeout(() => this.hostLost(a, 'Connection timed out. Check the hotspot and pair again.'), 20000);
@@ -169,13 +170,12 @@ class Session {
       if (this.guestAttempt && text.startsWith('TK9O:' + this.guestAttempt.invite + ':')) return;
       const decoded = unpack(text);
       if (!decoded) return;
-      this.lastScan = seconds;
-      this.answer(decoded);
+      this.answer(decoded, seconds);
     }
   }
-  async answer(decoded) {
+  async answer(decoded, seconds) {
     this.drop(this.guestAttempt);
-    const a = {invite: decoded.invite};
+    const a = {invite: decoded.invite, readAt: performance.now(), scanSeconds: seconds};
     try {
       a.link = new Link({
         host: false,
@@ -220,6 +220,8 @@ class Session {
     }
     if (msg.op === 'here' && a.name) {
       clearTimeout(a.timeout);
+      $('pairTiming').textContent = 'Last guest connected ' + ((performance.now() - a.readAt) / 1000).toFixed(1) + ' s after reading their reply.';
+      $('pairTiming').hidden = false;
       a.id = this.room.add(a.name);
       this.connections.set(a.id, a.link);
       this.pending = null;
@@ -284,6 +286,10 @@ class Session {
         $('pairMeta').textContent = 'Group ' + msg.code + ' · ' + (msg.people.length - 1) + ' paired';
       } else if (page === 'pair') {
         clearTimeout(this.guestAttempt.timeout);
+        const a = this.guestAttempt;
+        const read = a.scanSeconds ? 'QR read ' + a.scanSeconds.toFixed(1) + ' s after camera start. ' : '';
+        $('pairTiming').textContent = read + 'Connected ' + ((performance.now() - a.readAt) / 1000).toFixed(1) + ' s after reading the offer.';
+        $('pairTiming').hidden = false;
         this.enterRadio();
       }
       $('add').hidden = !this.host || msg.people.length >= CAPACITY;
