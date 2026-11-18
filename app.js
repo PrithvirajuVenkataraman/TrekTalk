@@ -35,5 +35,40 @@ for(const ev of ['pointerup','pointercancel','lostpointercapture'])$('talk').add
 $('talk').onkeydown=e=>{if([' ','Enter'].includes(e.key)){e.preventDefault();if(!e.repeat)speak();}};$('talk').onkeyup=mute;window.addEventListener('blur',mute);document.addEventListener('visibilitychange',()=>{if(document.hidden){mute();stopCamera();}});window.addEventListener('pagehide',disconnect);
 $('stopScan').onclick=stopCamera;
 $('scan').onclick=()=>run(async()=>{stopCamera();const g=generation;const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});if(g!==generation){stream.getTracks().forEach(t=>t.stop());return;}camera=stream;const v=$('camera');v.srcObject=camera;v.hidden=false;$('stopScan').hidden=false;await v.play();scanning=true;const started=performance.now();v.scrollIntoView({block:"center"});const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d',{willReadFrequently:true});function tick(){if(!scanning||camera!==stream)return;if(v.readyState>=2){const side=Math.min(v.videoWidth,v.videoHeight);canvas.width=canvas.height=Math.min(side,1080);ctx.drawImage(v,(v.videoWidth-side)/2,(v.videoHeight-side)/2,side,side,0,0,canvas.width,canvas.height);const frame=ctx.getImageData(0,0,canvas.width,canvas.height);const found=jsQR(frame.data,frame.width,frame.height,{inversionAttempts:'dontInvert'});if(found){log('QR read in '+((performance.now()-started)/1000).toFixed(1)+' s from camera ready');stopCamera();run(()=>apply(found.data));return;}}setTimeout(tick,50);}setTimeout(tick,50);});
-if('serviceWorker'in navigator){navigator.serviceWorker.register('./sw.js').then(()=>navigator.serviceWorker.ready).then(()=>{$('offline').textContent='Offline files saved (v3). Reopen once, then test with mobile data off.';}).catch(e=>{$('offline').textContent='Offline setup failed. Reconnect to internet and reload.';log(e.message);});}else $('offline').textContent='Offline storage is unavailable in this browser.';
+if('serviceWorker'in navigator){navigator.serviceWorker.register('./sw.js').then(()=>navigator.serviceWorker.ready).then(()=>{$('offline').textContent='Offline files saved (v6). Reopen once, then test with mobile data off.';}).catch(e=>{$('offline').textContent='Offline setup failed. Reconnect to internet and reload.';log(e.message);});}else $('offline').textContent='Offline storage is unavailable in this browser.';
 if(!window.isSecureContext||!navigator.mediaDevices||!window.RTCPeerConnection){$('host').disabled=true;$('scan').disabled=true;status('Use a supported browser over HTTPS.');}
+
+$('photo').onclick = () => {
+  stopCamera();
+  $('photoFile').click();
+};
+$('photoFile').onchange = () => run(async () => {
+  const input = $('photoFile');
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', {willReadFrequently:true});
+    for (const limit of [1200, 2400]) {
+      const scale = Math.min(1, limit / Math.max(image.width, image.height));
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const result = jsQR(pixels.data, pixels.width, pixels.height);
+      if (result) {
+        status('QR read from photo.');
+        await apply(result.data);
+        return;
+      }
+    }
+    throw Error('No QR found. Take a closer photo with all four corners visible.');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+});
