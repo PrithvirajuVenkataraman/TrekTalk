@@ -16,7 +16,7 @@ export class RadioAudio {
     this.sequences = new Set();
   }
   async init() {
-    await this.context.audioWorklet.addModule('./radio/capture.worklet.js?v=9');
+    await this.context.audioWorklet.addModule('./radio/capture.worklet.js?v=10');
     this.capture = new AudioWorkletNode(this.context, 'trek-capture');
     this.mic = this.context.createMediaStreamSource(new MediaStream([this.track]));
     this.mic.connect(this.capture);

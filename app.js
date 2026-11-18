@@ -1,11 +1,26 @@
-import {newInvite, roomNumber, pack, unpack, drawCode} from './radio/pairing.mjs?v=9';
-import {Link} from './radio/link.mjs?v=9';
-import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=9';
-import {RadioAudio} from './radio/audio.mjs?v=9';
-import {Scanner} from './radio/scanner.mjs?v=9';
+import {newInvite, roomNumber, pack, unpack, drawCode} from './radio/pairing.mjs?v=10';
+import {Link} from './radio/link.mjs?v=10';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=10';
+import {RadioAudio} from './radio/audio.mjs?v=10';
+import {Scanner} from './radio/scanner.mjs?v=10';
 
 const $ = id => document.getElementById(id);
-const cameraSettings = {facingMode: {ideal: 'user'}, width: {ideal: 1280}, height: {ideal: 960}};
+async function openRearCamera(audio = false) {
+  if (!navigator.mediaDevices.getSupportedConstraints().facingMode) {
+    throw Error('This browser cannot select a rear camera. Open TrekTalk in Safari or Chrome on your phone.');
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: {facingMode: {exact: 'environment'}, width: {ideal: 1280}, height: {ideal: 960}},
+    audio
+  });
+  const track = stream.getVideoTracks()[0];
+  const facing = track?.getSettings().facingMode;
+  if (!track || (facing && facing !== 'environment')) {
+    stream.getTracks().forEach(t => t.stop());
+    throw Error('Rear camera unavailable. Check that your browser can use the rear camera.');
+  }
+  return stream;
+}
 let current;
 let page = 'home';
 
@@ -14,6 +29,7 @@ function view(next) {
   for (const id of ['home', 'pair', 'radio']) $(id).hidden = id !== next;
   $('tools').hidden = next === 'home';
   $('tools').open = false;
+  $('showOffer').hidden = $('refreshOffer').hidden = true;
   $('photo').hidden = $('retryCamera').hidden = next !== 'pair';
   window.scrollTo(0, 0);
 }
@@ -22,12 +38,15 @@ function optics(mode, message = '') {
   $('hostCard').hidden = mode !== 'offer';
   $('replyQr').hidden = mode !== 'answer';
   $('guide').hidden = mode !== 'scan';
+  $('showOffer').hidden = !current?.host || mode !== 'scan';
+  $('refreshOffer').hidden = !current?.host || (mode !== 'offer' && mode !== 'scan');
   $('preparing').hidden = mode !== 'wait';
   $('preparing').textContent = message;
 }
 function errorText(error) {
   if (error?.name === 'NotAllowedError') return 'Allow camera and microphone access in your browser, then try again.';
   if (error?.name === 'NotReadableError') return 'Camera or microphone is in use. Close the other camera app and try again.';
+  if (error?.name === 'OverconstrainedError' && (!error.constraint || error.constraint === 'facingMode')) return 'Rear camera unavailable. Check that your browser can use the rear camera.';
   return error?.message || 'The phone could not complete this step.';
 }
 
@@ -52,7 +71,8 @@ class Session {
   async begin() {
     view('pair');
     $('pairTitle').textContent = this.host ? 'Pair your group' : 'Scan host QR';
-    $('pairMeta').textContent = this.host ? 'Group ' + this.room.code : 'Front camera';
+    $('pairMeta').textContent = this.host ? 'Group ' + this.room.code : 'Rear camera';
+    $('retryCamera').textContent = 'Restart rear camera';
     $('go').hidden = !this.host;
     $('go').disabled = true;
     optics('wait', 'Starting camera…');
@@ -64,10 +84,7 @@ class Session {
     this.ctx = new Context({latencyHint: 'interactive'});
     if (!this.ctx.audioWorklet) throw Error('This browser needs AudioWorklet support. Open TrekTalk in an up-to-date browser.');
     this.ctx.resume().catch(() => {});
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true},
-      video: cameraSettings
-    });
+    const stream = await openRearCamera({channelCount: 1, echoCancellation: true, noiseSuppression: true});
     if (this.closed) { stream.getTracks().forEach(t => t.stop()); return; }
     this.stream = stream;
     this.audio = new RadioAudio(this.ctx, stream, frame => {
@@ -89,7 +106,7 @@ class Session {
       await this.invite();
     } else {
       optics('scan');
-      hint('Face your screen toward the host screen, about a handspan apart. Keep them facing until Talkie opens.');
+      hint('Point your rear camera at the QR on the host phone.');
     }
   }
   async wake() {
@@ -104,7 +121,7 @@ class Session {
     this.restarting = true;
     try {
       this.scanner.stop();
-      const stream = await navigator.mediaDevices.getUserMedia({video: cameraSettings, audio: false});
+      const stream = await openRearCamera();
       const track = stream.getVideoTracks()[0];
       if (this.closed || page !== 'pair') { track.stop(); return; }
       await this.scanner.start(track);
@@ -139,8 +156,7 @@ class Session {
       if (this.closed || this.pending !== attempt) return;
       drawCode($('hostQr'), pack('offer', attempt.invite, sdp));
       attempt.phase = 'offer';
-      optics('offer');
-      hint('Face the two screens toward each other. Pair one phone at a time. Tap the QR to refresh.');
+      this.showInvitation();
     } catch (e) {
       if (this.pending !== attempt || this.closed) return;
       this.drop(attempt);
@@ -149,10 +165,22 @@ class Session {
       $('retryCamera').textContent = 'Retry pairing';
     }
   }
+  showInvitation() {
+    if (this.pending?.phase !== 'offer') return;
+    $('pairTitle').textContent = 'Pair your group';
+    optics('offer');
+    hint('Let the guest scan this QR. When their reply appears, tap this QR to open your rear camera view.');
+  }
+  scanReply() {
+    if (this.pending?.phase !== 'offer') return;
+    $('pairTitle').textContent = 'Scan guest reply';
+    optics('scan');
+    hint('Point your rear camera at the reply QR on the guest phone.');
+  }
   readQR(text, seconds) {
     if (this.closed || page !== 'pair' || !this.audio) return;
     if (text.startsWith('TT1:') || text.startsWith('TT3:')) {
-      hint('That QR is from an older version. Open TrekTalk v9 on both phones.');
+      hint('That QR is from an older version. Open TrekTalk v10 on both phones.');
       return;
     }
     if (this.host) {
@@ -162,6 +190,7 @@ class Session {
       if (!decoded) return;
       a.readAt = performance.now();
       a.phase = 'linking';
+      optics('wait', 'Connecting…');
       hint('Reply read. Connecting over the hotspot…');
       a.timeout = setTimeout(() => this.hostLost(a, 'Connection timed out. Check the hotspot and pair again.'), 20000);
       a.link.accept(decoded.description).catch(e => this.hostLost(a, errorText(e)));
@@ -192,14 +221,14 @@ class Session {
       });
       this.guestAttempt = a;
       optics('wait', 'Preparing reply…');
-      hint('Keep both screens facing each other.');
+      hint('The host will scan your reply.');
       const sdp = await a.link.answer(decoded.description);
       if (this.closed || this.guestAttempt !== a || page !== 'pair') return;
       drawCode($('replyQr'), pack('answer', a.invite, sdp));
       optics('answer');
-      $('pairTitle').textContent = 'Pairing';
-      hint('Keep the screens facing. The host front camera reads this reply automatically.');
-      a.timeout = setTimeout(() => this.guestLost(a, 'The host did not confirm. Refresh the host QR and face the screens again.'), 24000);
+      $('pairTitle').textContent = 'Show this QR to the host';
+      hint('Let the host scan this reply with their rear camera. Talkie opens automatically.');
+      a.timeout = setTimeout(() => this.guestLost(a, 'The host did not confirm. Ask the host to refresh the invitation, then scan it again.'), 60000);
     } catch (e) {
       if (this.guestAttempt === a) this.guestLost(a, errorText(e));
       else if (!this.closed && !this.guestAttempt) hint(errorText(e));
@@ -271,7 +300,7 @@ class Session {
     $('go').hidden = false;
     $('go').disabled = false;
     $('pairTitle').textContent = 'Pair another phone';
-    optics('wait', 'Starting front camera…');
+    optics('wait', 'Starting rear camera…');
     await this.restartCamera();
     if (!this.closed && page === 'pair' && this.pending?.phase !== 'linking') await this.invite();
   }
@@ -432,7 +461,12 @@ try { $('name').value = localStorage.getItem('trektalk-name') || ''; } catch {}
 $('host').onclick = () => start(true);
 $('guest').onclick = () => start(false);
 $('go').onclick = () => current?.go();
-$('hostCard').onclick = () => { if (current?.pending?.phase === 'offer') current.invite(); };
+$('hostCard').onclick = () => current?.scanReply();
+$('showOffer').onclick = () => { $('tools').open = false; current?.showInvitation(); };
+$('refreshOffer').onclick = () => {
+  $('tools').open = false;
+  if (current?.pending?.phase === 'offer') current.invite();
+};
 $('leave').onclick = () => end();
 $('add').onclick = () => current?.addPhone().catch(e => hint(errorText(e)));
 $('resume').onclick = () => current?.ctx.resume().catch(e => { $('channelLabel').textContent = errorText(e); });
@@ -487,8 +521,8 @@ async function prepareOffline() {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
   const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
   const markReady = async () => {
-    const hit = await caches.match(new URL('./__trektalk_ready_v9__', location.href).href, {cacheName: 'trektalk-v9'});
-    if (hit) $('offline').textContent = 'Ready offline · v9';
+    const hit = await caches.match(new URL('./__trektalk_ready_v10__', location.href).href, {cacheName: 'trektalk-v10'});
+    if (hit) $('offline').textContent = 'Ready offline · v10';
     return Boolean(hit);
   };
   if (await markReady()) return;
@@ -499,6 +533,7 @@ async function prepareOffline() {
   watch(reg.installing);
   reg.addEventListener('updatefound', () => watch(reg.installing));
   navigator.serviceWorker.addEventListener('controllerchange', () => markReady().catch(() => {}));
+  if (reg.active && !reg.installing) await reg.update();
   await navigator.serviceWorker.ready;
   await markReady();
 }

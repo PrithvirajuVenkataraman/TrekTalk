@@ -8,19 +8,21 @@
   <title>TrekTalk</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./icon.svg">
-  <link rel="stylesheet" href="./style.css?v=9">
+  <link rel="stylesheet" href="./style.css?v=10">
 </head>
 <body>
 <main>
   <header>
     <span class="brand"><img src="./icon.svg" alt="" width="34" height="34">TrekTalk</span>
-    <span class="version">v9</span>
+    <span class="version">v10</span>
     <details id="tools" hidden>
       <summary>Options</summary>
       <div class="menu">
         <p id="pairTiming" class="small" hidden></p>
         <button id="photo" type="button">Read QR from photo</button>
-        <button id="retryCamera" type="button">Restart front camera</button>
+        <button id="showOffer" type="button" hidden>Show invitation again</button>
+        <button id="refreshOffer" type="button" hidden>Refresh QR offline</button>
+        <button id="retryCamera" type="button">Restart rear camera</button>
         <button id="leave" type="button">Leave group</button>
       </div>
     </details>
@@ -44,7 +46,7 @@
     <div class="optics" id="optics">
       <video id="camera" muted playsinline autoplay aria-label="Camera preview"></video>
       <div id="guide" aria-hidden="true"></div>
-      <button type="button" class="qrCard" id="hostCard" hidden aria-label="Refresh host QR offline">
+      <button type="button" class="qrCard" id="hostCard" hidden aria-label="Scan guest reply with rear camera">
         <canvas id="hostQr" aria-label="Group invitation QR code"></canvas>
       </button>
       <canvas id="replyQr" class="qrCard" aria-label="Automatic pairing reply" hidden></canvas>
@@ -66,6 +68,6 @@
 <script src="./vendor/qr.js"></script>
 <script src="./vendor/scan.js"></script>
 <script src="./vendor/pako.js"></script>
-<script type="module" src="./app.js?v=9"></script>
+<script type="module" src="./app.js?v=10"></script>
 </body>
 </html>

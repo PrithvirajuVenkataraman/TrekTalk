@@ -7,8 +7,9 @@ import {fileURLToPath} from 'node:url';
 
 const {chromium} = createRequire(import.meta.url)('playwright-core');
 const currentRoot = fileURLToPath(new URL('../', import.meta.url));
-const previousRoot = process.env.TREKTALK_V8_ROOT;
-assert.ok(previousRoot, 'Set TREKTALK_V8_ROOT to a checkout of v8');
+const previousRoot = process.env.TREKTALK_PREVIOUS_ROOT;
+const previousVersion = process.env.TREKTALK_PREVIOUS_VERSION;
+assert.ok(previousRoot && ['8','9'].includes(previousVersion), 'Specify the old release directory and version');
 let root = previousRoot;
 let online = true;
 const types = {'.js':'text/javascript', '.mjs':'text/javascript', '.html':'text/html',
@@ -27,22 +28,22 @@ let browser;
 try {
   browser = await chromium.launch({executablePath:process.env.TREKTALK_CHROME || '/usr/bin/google-chrome', args:['--no-sandbox']});
   const page = await browser.newPage();
-  await page.goto(site + '/?update=8');
-  await page.getByText(/Offline files saved \(v8\)/).waitFor();
+  await page.goto(site + '/?update=' + previousVersion);
+  await page.getByText(previousVersion === '8' ? /Offline files saved \(v8\)/ : 'Ready offline · v9').waitFor();
   await page.waitForFunction(() => navigator.serviceWorker.controller);
-  assert.ok(await page.evaluate(() => caches.has('trektalk-v8')));
+  assert.ok(await page.evaluate(v => caches.has('trektalk-v' + v), previousVersion));
 
   // Simulate a deployment while this phone still has the old cache and worker.
   root = currentRoot;
-  await page.goto(site + '/?update=9');
-  await page.getByText('Ready offline · v9', {exact:true}).waitFor();
-  await page.waitForFunction(async () => !(await caches.has('trektalk-v8')));
+  await page.goto(site + '/?update=10');
+  await page.getByText('Ready offline · v10', {exact:true}).waitFor();
+  await page.waitForFunction(async v => !(await caches.has('trektalk-v' + v)), previousVersion);
   online = false;
   await page.reload();
-  await page.getByText('Ready offline · v9', {exact:true}).waitFor();
+  await page.getByText('Ready offline · v10', {exact:true}).waitFor();
   const controls = await page.getByRole('button').allTextContents();
   assert.ok(controls.includes('Host a group') && controls.includes('Scan host QR'));
-  console.log('PASS: a phone with the v8 worker and cache upgrades to v9, then opens the radio app offline');
+  console.log('PASS: upgraded v' + previousVersion + ' to v10 and reopened offline');
 } finally {
   await browser?.close();
   server.close();
