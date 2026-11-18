@@ -23,9 +23,7 @@ const site='http://127.0.0.1:'+server.address().port;
 const browser=await pw.launch({executablePath:process.env.TREKTALK_CHROME || '/usr/bin/google-chrome',args:['--no-sandbox','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--allow-loopback-in-peer-connection','--autoplay-policy=no-user-gesture-required','--disable-background-timer-throttling']});
 const pages=[];
 try{
-  const ctx=await browser.newContext({viewport:{width:393,height:852}});
-  await ctx.grantPermissions(['microphone','camera']);
-  await ctx.addInitScript(()=>{
+  function installMediaFixtures(){
     window.heard=0;window.cameraPicture=null;window.qrDecoded=[];
     const play=AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start=function(...args){
@@ -52,24 +50,31 @@ try{
       if(constraints.video){
         const canvas=document.createElement('canvas');canvas.width=640;canvas.height=640;
         const cx=canvas.getContext('2d');const draw=()=>{cx.fillStyle='#777';cx.fillRect(0,0,640,640);if(window.cameraPicture)cx.drawImage(window.cameraPicture,115,120,396,396);};
-        draw();const s=canvas.captureStream(20);window.cameraLoop=setInterval(draw,50);tracks.push(...s.getVideoTracks());
+        draw();const s=canvas.captureStream(20);clearInterval(window.cameraLoop);window.cameraLoop=setInterval(draw,50);tracks.push(...s.getVideoTracks());
       }
       return new MediaStream(tracks);
     };
     window.pointAt=async url=>{const im=new Image();im.src=url;await im.decode();window.cameraPicture=im;};
-  });
+  }
   async function phone(name){
-    const p=await ctx.newPage();pages.push(p);
+    const ctx=await browser.newContext({viewport:{width:393,height:852}});
+    await ctx.grantPermissions(['microphone','camera']);
+    await ctx.addInitScript(installMediaFixtures);
+    const p=await ctx.newPage();
     p.on('pageerror',e=>console.log('PAGE ERROR',name,e.message));p.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',name,m.text());});
     await p.goto(site);await p.getByText('Ready offline · v9').waitFor({timeout:10000});await p.fill('#name',name);return p;
   }
   const host=await phone('OnePlus'),iphone=await phone('iPhone'),third=await phone('Arun');
+  pages.push(host,iphone,third);
+  const more=[];
+  for(let i=4;i<=10;i++) more.push(await phone('Hiker '+i));
   online=false;
   await iphone.reload();await iphone.getByText('Ready offline · v9').waitFor();await iphone.fill('#name','iPhone');
   await host.click('#host');
   async function imageOf(p,id){await p.locator(id).waitFor({state:'visible',timeout:10000});return p.locator(id).evaluate(e=>e.toDataURL());}
   async function point(p,data){await p.evaluate(data=>window.pointAt(data),data);}
   async function pair(guest, started=false){
+    await guest.evaluate(()=>{window.cameraPicture=null;});
     await guest.click('#guest');await guest.locator('#guide').waitFor({state:'visible',timeout:8000});
     const offer=await imageOf(host,'#hostQr');
     const start=Date.now();await point(guest,offer);
@@ -86,7 +91,7 @@ try{
   // Tap a target with a real pointer. Count decoded, non-silent frames scheduled for playback.
   async function transmit(p,label,expected){
     const before=await Promise.all(pages.map(q=>q.evaluate(()=>window.heard)));
-    const btn=p.getByRole('button',{name:label,exact:true});const box=await btn.boundingBox();
+    const btn=p.getByRole('button',{name:label,exact:true});await btn.scrollIntoViewIfNeeded();const box=await btn.boundingBox();
     await p.mouse.move(box.x+box.width/2,box.y+box.height/2);await p.mouse.down();
     await p.getByText('Transmitting · release to listen').waitFor({timeout:3000});
     await new Promise(r=>setTimeout(r,850));await p.mouse.up();
@@ -94,7 +99,7 @@ try{
     const after=await Promise.all(pages.map(q=>q.evaluate(()=>window.heard)));
     const delta=after.map((x,i)=>x-before[i]);console.log(label,delta);
     delta.forEach((n,i)=>assert.equal(n>0,expected.includes(i)));
-    for(const q of pages)assert.equal(await q.locator('#channelLabel').innerText(),'Listening');
+    await Promise.all(pages.map(q=>q.getByText('Listening',{exact:true}).waitFor()));
   }
   await transmit(iphone,'Talk to Arun',[2]);
   await transmit(host,'Talk to iPhone',[1]);
@@ -111,7 +116,7 @@ try{
     document.getElementById('hostQr').toDataURL() !== old,oldOffer);
   assert.equal(await iphone.locator('#targets button').count(),2);
   await pair(third,true);
-  for(let i=4;i<=10;i++) await pair(await phone('Hiker '+i),true);
+  for(const hiker of more){pages.push(hiker);await pair(hiker,true);}
   await host.getByText('All 10 radios are paired.').waitFor();
   await host.click('#go');
   for(const page of pages) assert.equal(await page.locator('#targets button').count(),10);
@@ -122,6 +127,7 @@ try{
     .dispatchEvent(event,{key:'Enter',bubbles:true});
   await key(iphone,'Talk to everyone','keydown');
   await iphone.getByText('Transmitting · release to listen').waitFor();
+  await third.getByText('Receiving from iPhone',{exact:true}).waitFor();
   await key(third,'Talk to OnePlus','keydown');
   assert.match(await third.locator('#channelLabel').innerText(),/Receiving from iPhone/);
   // Losing focus must release the active microphone and the shared channel.

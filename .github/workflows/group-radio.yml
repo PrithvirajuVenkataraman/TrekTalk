@@ -25,5 +25,5 @@ jobs:
         run: node --test tests/*.cjs
       - name: Install test driver
         run: npm install --no-save --package-lock=false --ignore-scripts playwright-core@1.62.1
-      - name: Test three radios with offline camera pairing and audio
+      - name: Test ten radios with offline camera pairing and audio
         run: node tests/browser-group.mjs
