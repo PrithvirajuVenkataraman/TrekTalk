@@ -1,5 +1,38 @@
-const CACHE='trektalk-v8';
-const FILES=['./','./index.html','./?update=8','./style.css','./app.js?v=8','./manifest.json','./icon.svg','./vendor/qr.js','./vendor/scan.js','./vendor/pako.js'];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))));
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('trektalk-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
-self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin)return;e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request)));});
+const CACHE = 'trektalk-v9';
+const CORE = [
+  './', './index.html', './manifest.json', './icon.svg', './style.css?v=9', './app.js?v=9',
+  './vendor/qr.js', './vendor/scan.js', './vendor/pako.js',
+  ...['pairing.mjs','link.mjs','room.mjs','audio.mjs','scanner.mjs','capture.worklet.js']
+    .map(file => './radio/' + file + '?v=9')
+];
+self.addEventListener('install', event => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await cache.addAll(CORE.map(path => new Request(new URL(path, self.location.href), {cache: 'reload'})));
+    await cache.put(new URL('./__trektalk_ready_v9__', self.location.href), new Response('ready'));
+    await self.skipWaiting();
+  })());
+});
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    for (const key of await caches.keys()) if (key.startsWith('trektalk-') && key !== CACHE) await caches.delete(key);
+    await self.clients.claim();
+  })());
+});
+self.addEventListener('fetch', event => {
+  const req = event.request;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (req.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const network = await fetch(req, {signal: AbortSignal.timeout(1800), cache: 'no-cache'});
+        if (network.ok) return network;
+      } catch {}
+      return await cache.match('./index.html') || Response.error();
+    })());
+    return;
+  }
+  event.respondWith(caches.open(CACHE).then(async cache => await cache.match(req) || fetch(req)));
+});

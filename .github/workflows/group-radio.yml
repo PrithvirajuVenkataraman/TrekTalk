@@ -1,0 +1,29 @@
+name: Group radio checks
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, test/group-radio-v9]
+    paths:
+      - 'radio/**'
+      - 'app.js'
+      - 'index.html'
+      - 'sw.js'
+      - 'tests/**'
+      - '.github/workflows/group-radio.yml'
+permissions:
+  contents: read
+jobs:
+  offline-radio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check QR and channel routing
+        run: node --test tests/*.cjs
+      - name: Install test driver
+        run: npm install --no-save --package-lock=false --ignore-scripts playwright-core@1.62.1
+      - name: Test three radios with offline camera pairing and audio
+        run: node tests/browser-group.mjs

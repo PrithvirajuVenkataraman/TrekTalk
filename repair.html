@@ -1,3 +1,12 @@
-<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Update TrekTalk</title><style>body{font:18px system-ui;max-width:500px;margin:60px auto;padding:25px;background:#102d29;color:white}button{padding:20px;font:inherit}</style><h1>Update TrekTalk to v3</h1><p>This clears only TrekTalk's offline app files and ends any active pairing. Keep internet on.</p><button id="repair">Load the corrected app</button><p id="status"></p><script>
-document.getElementById('repair').onclick=async()=>{try{document.getElementById('status').textContent='Updating…';for(const r of await navigator.serviceWorker.getRegistrations())await r.unregister();for(const k of await caches.keys())if(k.startsWith('trektalk-'))await caches.delete(k);location.replace('./?version=3');}catch(e){document.getElementById('status').textContent=e.message;}};
-</script>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Update TrekTalk</title><style>body{font:18px system-ui;max-width:30rem;margin:3rem auto;padding:1rem;background:#10251e;color:white}button{padding:1rem;font:inherit}</style><h1>Update TrekTalk</h1><p>Connect to the internet and close any active call before updating the offline files.</p><button id="refresh">Load current version</button><p id="status" role="status"></p><script>
+document.getElementById('refresh').onclick = async () => {
+  try {
+    document.getElementById('status').textContent = 'Updating…';
+    for (const reg of await navigator.serviceWorker.getRegistrations()) {
+      if (reg.active?.scriptURL === new URL('./sw.js', location.href).href) await reg.unregister();
+    }
+    for (const name of await caches.keys()) if (name.startsWith('trektalk-')) await caches.delete(name);
+    location.replace('./?update=' + Date.now());
+  } catch (e) { document.getElementById('status').textContent = e.message; }
+};
+</script></html>

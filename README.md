@@ -1,35 +1,31 @@
 # TrekTalk
 
-Experimental two-phone offline push-to-talk web app for OnePlus 7T and iPhone 15 Pro Max. Real-device compatibility and range are NOT yet verified. This is not a six-to-ten-device implementation or emergency communication system.
+An offline group radio for a shared Wi-Fi network or phone hotspot. Version 9 supports one host and up to nine guests. Sound and connection control go directly over local WebRTC data channels. Vercel distributes the static app before the trek.
 
-## Deploy to Vercel
-1. Import this GitHub repository as a new Vercel project.
-2. Choose **Other** as the framework. Leave the build command empty. Use the repository root as the output directory (`.` if required). No install command, environment variables, API keys, database, or signaling server are required.
-3. Deploy and open the HTTPS URL on both phones while online. Wait for **Offline files saved**. On iPhone use Safari and optionally Share > Add to Home Screen. Open the installed app while still online and wait for the same message there too.
-4. Close and reopen once. Confirm that the page also reloads with internet disabled before attempting voice.
+## First use
 
-## Offline phone test
-1. Turn off mobile data on both phones. Turn on the OnePlus hotspot and connect the iPhone. Keep both screens on and the app in the foreground.
-2. On OnePlus tap **Create offer** and allow microphone access.
-3. On iPhone tap **Scan code** inside TrekTalk, allow camera access, and scan the OnePlus code. Allow microphone access when requested. The iPhone displays a reply QR.
-4. On OnePlus tap **Scan code** and scan the iPhone reply.
-5. Wait for **Connection: connected** on both. Tap **Enable speaker** if audio does not start.
-6. Hold the talk button on one device and speak. Release, then try the other device. Take turns. Move phones apart to avoid feedback.
-7. Test with all internet still disabled. Record OS/browser versions, distance, sound quality, screen-lock behaviour, and reconnection behaviour.
+1. On each phone, open the HTTPS site while online. Wait for **Ready offline · v9**. If using an iPhone Home Screen installation, open the installed app while online too.
+2. Turn off mobile data. Keep the OnePlus hotspot on and connect each guest to it. Leave the app in the foreground.
+3. Enter a name on each phone. On the OnePlus choose **Host a group**. On each guest choose **Scan host QR**. Allow the front camera and microphone when asked.
+4. Pair one guest at a time. Face the two screens toward each other, about a handspan apart. The guest reads the invitation, shows its reply automatically and opens Talkie when the host confirms. Both front cameras must see the other screen. The host displays a new invitation for each additional guest.
+5. The host can tap the displayed QR to refresh an unused invitation offline. Refreshing keeps everyone already paired. **Options** includes reading a photo and restarting the camera.
+6. Once the desired guests are paired, tap **Go to Talkie** on the host. All paired guests can now transmit. A phone that has only scanned the invitation still has to complete its return exchange.
+7. Hold **Talk to everyone** to broadcast. Hold **Talk to [name]** for an individual transmission. Release to listen. The host grants one speaker the channel at a time. A private transmission is forwarded only to the selected listener. The host routes all guest traffic.
+8. The host can select **Pair another phone** to add or reconnect a guest. Leaving the host group ends it. Closing a guest removes that radio from the roster.
 
-The QR codes must be scanned inside the app, not the system Camera app. Manual text codes are available as a fallback. Codes contain session credentials: exchange only with your intended partner. Pairing is two-way and uses complete ICE gathering, compressed SDP and local QR libraries. No public STUN or TURN server is configured. Browser local-address privacy, mDNS resolution, hotspot client isolation, or OS restrictions may prevent local WebRTC. A successful hotspot connection alone does not prove WebRTC will work.
+## How it works
 
-## Limits and troubleshooting
-- Two phones only. No mesh, automatic peer discovery, GPS sharing, background guarantee, or enforced single-speaker arbitration.
-- Keep screens on. Hidden pages immediately mute the microphone. Reconnection may require **Disconnect / start again** on BOTH phones and a fresh QR exchange.
-- If connection fails, check both phones are on the same local network, allow camera/microphone/local-network permissions when offered, and retry. Compare against a shared router without internet to isolate hotspot limitations.
-- Camera and microphone need HTTPS (or localhost for desktop development). A plain HTTP LAN server is not sufficient on phones.
-- Offline assets can be evicted by the browser. Always confirm offline loading before leaving internet coverage.
-- Updates install in the background and activate after existing app windows close. Increment the cache name in sw.js when changing assets.
-- Voice uses WebRTC encrypted media. There is no recording or analytics. The peer connection remains active between presses; release disables the audio track rather than closing the microphone session. Disconnect releases hardware.
+- Each guest has an independent WebRTC connection to the host. A compact QR carries only the data-channel session description, including local ICE addresses. The two front cameras exchange descriptions. No cloud server, APK, API key, internet joining, or second manual scan is needed for that flow.
+- The six-digit number identifies the group. New invitations have independent random nonces and WebRTC credentials. Each reply must match the current invitation. An older TrekTalk version cannot join a v9 group.
+- Two local data channels carry reliable ordered control and time-sensitive unordered voice. Microphone audio is sampled at 16 kHz, encoded as 20 ms µ-law frames and played through Web Audio. The microphone track starts muted. Transmission begins only after a channel grant and stops on release, cancellation, loss of focus or disconnection.
+- The hub checks the grant, sender and destination of every audio packet. A short renewable lease clears abandoned transmissions. No audio is stored. Individual transmissions pass through the host, which must be trusted.
+- The camera stops when Talkie opens. Front-camera focus, lighting, permissions and local network setup affect pairing time. There is no guaranteed scan time, range, screen-lock operation or emergency service connection. Stay within hotspot range. The hotspot must permit local traffic to its host.
+- If both screens show a QR but pairing stalls, keep the devices facing each other and check camera permissions on both. If needed, use **Options → Read QR from photo**. Switch back to the TrekTalk screen after taking a picture. Keep the host QR unchanged during a pairing attempt.
 
-## Local development
-Serve this directory with any static server. No build step is needed. `node --check app.js` and `node --check sw.js` check syntax. Real-phone testing remains required.
+## Deployment and checks
 
-## Third-party code
-Bundled locally so offline mode has no CDN dependency: qrcode-generator 2.0.4, jsQR 1.4.0, pako 3.0.3. See vendor license files.
+Static site, no build, database or server keys. Import the repository in Vercel, choose **Other**, use the root directory, and deploy over HTTPS. A service worker saves all scripts, the audio worklet and the QR libraries. Versioned asset URLs prevent earlier cached scripts from mixing with this version.
+
+Run `node --test tests/*.cjs` for the protocol and channel checks. For a physical test, verify guest-to-host, host-to-guest, guest-to-guest, broadcast, simultaneous press, release, disconnect and rejoin with mobile data off. Test camera speed and loudspeaker output on the actual phones.
+
+Bundled libraries: qrcode-generator, jsQR and pako. See the license notices in vendor.

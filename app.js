@@ -1,76 +1,499 @@
-'use strict';
-const $=id=>document.getElementById(id);
-let sessionCode='';
-function newCode(){const a=new Uint32Array(1);do{crypto.getRandomValues(a);}while(a[0]>=4294000000);return String(a[0]%1000000).padStart(6,'0');}
-let pc, mic, camera, scanning=false, generation=0, busy=false;
-const log=s=>{$('log').textContent+=new Date().toLocaleTimeString()+' '+s+'\n';};
-const status=s=>{$('status').textContent=s;log(s);};
-function mute(){if(mic)mic.getTracks().forEach(t=>t.enabled=false);$('talk').classList.remove('active');$('talk').textContent='HOLD TO TALK';}
-function stopCamera(){scanning=false;if(camera)camera.getTracks().forEach(t=>t.stop());camera=null;$('camera').srcObject=null;$('camera').hidden=true;$('stopScan').hidden=true;}
-function disconnect(){document.getElementById("refreshQr").hidden=true;generation++;mute();stopCamera();if(pc){pc.onconnectionstatechange=null;pc.close();}pc=null;if(mic)mic.getTracks().forEach(t=>t.stop());mic=null;$('remote').srcObject=null;$('talk').disabled=true;$('qr').replaceChildren();$('out').value='';$('input').value='';$('qrHint').textContent='';status('Not connected');}
-function encode(d){const text=d.type+'\n'+sessionCode+'\n'+d.sdp;const bytes=pako.deflate(new TextEncoder().encode(text));return 'TT3:'+btoa(String.fromCharCode(...bytes));}
-function decode(s){
- s=s.trim();
- if(s.startsWith('TT1:'))throw Error('This phone read an older TrekTalk offer. Update the phone displaying the QR, then create a fresh offer.');
- if(!s.startsWith('TT3:'))throw Error('QR read, but it is not a supported TrekTalk pairing code. Scan the code below Create offer on the other phone.');
- if(s.length>30000)throw Error('Pairing code is too large.');
- try{const text=new TextDecoder('utf-8',{fatal:true}).decode(pako.inflate(Uint8Array.from(atob(s.slice(4)),c=>c.charCodeAt(0))));
- const first=text.indexOf('\n'),second=text.indexOf('\n',first+1);
- const type=text.slice(0,first),code=text.slice(first+1,second),sdp=text.slice(second+1);
- if(!['offer','answer'].includes(type)||!/^\d{6}$/.test(code)||!sdp.startsWith('v=0')||sdp.length>100000)throw Error('Invalid payload');
- return {type,sdp,code};
- }catch(e){throw Error('QR data could not be decoded (v8). Create a new offer and scan again.');}
-}
-async function setup(){const g=generation;const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});if(g!==generation){stream.getTracks().forEach(t=>t.stop());throw Error('Setup cancelled.');}mic=stream;mute();pc=new RTCPeerConnection({iceServers:[]});mic.getTracks().forEach(t=>pc.addTrack(t,mic));pc.ontrack=e=>{$('remote').srcObject=e.streams[0]||new MediaStream([e.track]);$('remote').play().catch(()=>status('Tap Enable speaker to hear your partner.'));};pc.onicecandidateerror=e=>log('ICE: '+e.errorText);pc.onconnectionstatechange=()=>{if(!pc)return;const s=pc.connectionState;if(s==='connected')$('refreshQr').hidden=true;status('Connection: '+s);$('talk').disabled=s!=='connected';if(s!=='connected')mute();if(s==='failed')status('Local connection failed. Check hotspot, then start again on both phones.');};return pc;}
-function gather(peer){return new Promise((resolve,reject)=>{if(peer.iceGatheringState==='complete')return resolve();const timer=setTimeout(()=>{cleanup();reject(Error('Connection gathering timed out. Start again.'));},20000);const check=()=>{if(peer.iceGatheringState==='complete'){cleanup();resolve();}};function cleanup(){clearTimeout(timer);peer.removeEventListener('icegatheringstatechange',check);}peer.addEventListener('icegatheringstatechange',check);});}
-function showCode(d){$('refreshQr').hidden=d.type!=='offer';const s=encode(d);$('out').value=s;$('sessionCode').textContent=sessionCode;const qr=qrcode(0,'L');qr.addData(s);qr.make();$('qr').innerHTML=qr.createSvgTag({cellSize:4,margin:16,scalable:true});$('qrHint').textContent=d.type==='offer'?'iPhone: scan this offer inside TrekTalk.':'OnePlus: scan this reply inside TrekTalk.';}
-async function offer(){disconnect();sessionCode=newCode();const peer=await setup();await peer.setLocalDescription(await peer.createOffer());status('Preparing offer…');await gather(peer);if(peer!==pc)return;showCode(peer.localDescription);status('Offer ready. Scan it on the iPhone.');}
-async function apply(code){const d=decode(code.trim());if(d.type==='offer'){disconnect();sessionCode=d.code;const peer=await setup();await peer.setRemoteDescription({type:d.type,sdp:d.sdp});await peer.setLocalDescription(await peer.createAnswer());await gather(peer);if(peer!==pc)return;showCode(peer.localDescription);status('Reply ready. Scan it on the OnePlus.');}else{if(!pc||pc.signalingState!=='have-local-offer')throw Error('Create an offer on this phone first.');if(d.code!==sessionCode)throw Error('Reply belongs to another session. Scan the correct phone.');await pc.setRemoteDescription({type:d.type,sdp:d.sdp});status('Reply accepted. Connecting locally…');}}
-async function run(fn){if(busy)return;busy=true;$('host').disabled=true;$('apply').disabled=true;try{await fn();}catch(e){mute();status(e.message||String(e));}finally{busy=false;$('host').disabled=false;$('apply').disabled=false;}}
-$('host').onclick=()=>run(offer);
-$('refreshQr').onclick=()=>run(offer);$('apply').onclick=()=>run(()=>apply($('input').value));$('reset').onclick=disconnect;
-$('copy').onclick=()=>run(async()=>{await navigator.clipboard.writeText($('out').value);status('Code copied.');});
-$('sound').onclick=()=>run(async()=>{await $('remote').play();});
-function speak(){if(!pc||pc.connectionState!=='connected'||document.hidden)return;mic.getTracks().forEach(t=>t.enabled=true);$('talk').classList.add('active');$('talk').textContent='TALKING… RELEASE TO MUTE';}
-$('talk').onpointerdown=e=>{e.preventDefault();$('talk').setPointerCapture(e.pointerId);speak();};
-for(const ev of ['pointerup','pointercancel','lostpointercapture'])$('talk').addEventListener(ev,mute);
-$('talk').onkeydown=e=>{if([' ','Enter'].includes(e.key)){e.preventDefault();if(!e.repeat)speak();}};$('talk').onkeyup=mute;window.addEventListener('blur',mute);document.addEventListener('visibilitychange',()=>{if(document.hidden){mute();stopCamera();}});window.addEventListener('pagehide',disconnect);
-$('stopScan').onclick=stopCamera;
-$('scan').onclick=()=>run(async()=>{stopCamera();const g=generation;const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});if(g!==generation){stream.getTracks().forEach(t=>t.stop());return;}camera=stream;const v=$('camera');delete v.dataset.hint;v.srcObject=camera;v.hidden=false;$('stopScan').hidden=false;await v.play();scanning=true;const started=performance.now();v.scrollIntoView({block:"center"});const canvas=document.createElement('canvas');const ctx=canvas.getContext('2d',{willReadFrequently:true});function tick(){if(!scanning||camera!==stream)return;if(v.readyState>=2){const side=Math.min(v.videoWidth,v.videoHeight);canvas.width=canvas.height=Math.min(side,1080);ctx.drawImage(v,(v.videoWidth-side)/2,(v.videoHeight-side)/2,side,side,0,0,canvas.width,canvas.height);const frame=ctx.getImageData(0,0,canvas.width,canvas.height);const found=jsQR(frame.data,frame.width,frame.height,{inversionAttempts:'dontInvert'});if(found && found.data.trim().startsWith('TT3:')){log('QR read in '+((performance.now()-started)/1000).toFixed(1)+' s from camera ready');stopCamera();run(()=>apply(found.data));return;}if(found && !v.dataset.hint){v.dataset.hint='1';status('Still scanning. Center the whole TrekTalk QR in the preview.');}}setTimeout(tick,50);}setTimeout(tick,50);});
-if('serviceWorker'in navigator){navigator.serviceWorker.register('./sw.js').then(()=>navigator.serviceWorker.ready).then(()=>{$('offline').textContent='Offline files saved (v8). Reopen once, then test with mobile data off.';}).catch(e=>{$('offline').textContent='Offline setup failed. Reconnect to internet and reload.';log(e.message);});}else $('offline').textContent='Offline storage is unavailable in this browser.';
-if(!window.isSecureContext||!navigator.mediaDevices||!window.RTCPeerConnection){$('host').disabled=true;$('scan').disabled=true;status('Use a supported browser over HTTPS.');}
+import {newInvite, roomNumber, pack, unpack, drawCode} from './radio/pairing.mjs?v=9';
+import {Link} from './radio/link.mjs?v=9';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=9';
+import {RadioAudio} from './radio/audio.mjs?v=9';
+import {Scanner} from './radio/scanner.mjs?v=9';
 
-$('photo').onclick = () => {
-  stopCamera();
-  $('photoFile').click();
-};
-$('photoFile').onchange = () => run(async () => {
-  const input = $('photoFile');
-  const file = input.files[0];
-  input.value = '';
-  if (!file) return;
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d', {willReadFrequently:true});
-    for (const limit of [1200, 2400]) {
-      const scale = Math.min(1, limit / Math.max(image.width, image.height));
-      canvas.width = Math.max(1, Math.round(image.width * scale));
-      canvas.height = Math.max(1, Math.round(image.height * scale));
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const result = jsQR(pixels.data, pixels.width, pixels.height);
-      if (result) {
-        status('QR read from photo.');
-        await apply(result.data);
+const $ = id => document.getElementById(id);
+const cameraSettings = {facingMode: {ideal: 'user'}, width: {ideal: 1280}, height: {ideal: 960}};
+let current;
+let page = 'home';
+
+function view(next) {
+  page = next;
+  for (const id of ['home', 'pair', 'radio']) $(id).hidden = id !== next;
+  $('tools').hidden = next === 'home';
+  $('tools').open = false;
+  $('photo').hidden = $('retryCamera').hidden = next !== 'pair';
+  window.scrollTo(0, 0);
+}
+function hint(message) { $('pairHint').textContent = message; }
+function optics(mode, message = '') {
+  $('hostCard').hidden = mode !== 'offer';
+  $('replyQr').hidden = mode !== 'answer';
+  $('guide').hidden = mode !== 'scan';
+  $('preparing').hidden = mode !== 'wait';
+  $('preparing').textContent = message;
+}
+function errorText(error) {
+  if (error?.name === 'NotAllowedError') return 'Allow camera and microphone access in your browser, then try again.';
+  if (error?.name === 'NotReadableError') return 'Camera or microphone is in use. Close the other camera app and try again.';
+  return error?.message || 'The phone could not complete this step.';
+}
+
+class Session {
+  constructor(host, name) {
+    this.host = host;
+    this.name = name;
+    this.closed = false;
+    this.connections = new Map();
+    this.radioState = {mode: 'idle'};
+    this.counter = 0;
+    this.scanner = new Scanner($('camera'), (text, seconds) => this.readQR(text, seconds), hint);
+    if (host) {
+      this.room = new Room({
+        name, code: roomNumber(),
+        deliver: (id, msg) => id === HOST ? this.receive(msg) : this.connections.get(id)?.send(msg),
+        audio: (id, frame) => id === HOST ? this.audio?.play(frame) : this.connections.get(id)?.sendVoice(frame)
+      });
+    }
+  }
+  async begin() {
+    view('pair');
+    $('pairTitle').textContent = this.host ? 'Pair your group' : 'Scan host QR';
+    $('pairMeta').textContent = this.host ? 'Group ' + this.room.code : 'Front camera';
+    $('go').hidden = !this.host;
+    $('go').disabled = true;
+    optics('wait', 'Starting camera…');
+    hint('Allow camera and microphone access.');
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
+      throw Error('Open TrekTalk in Safari or Chrome using its HTTPS address.');
+    }
+    const Context = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new Context({latencyHint: 'interactive'});
+    if (!this.ctx.audioWorklet) throw Error('This browser needs AudioWorklet support. Open TrekTalk in an up-to-date browser.');
+    this.ctx.resume().catch(() => {});
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true},
+      video: cameraSettings
+    });
+    if (this.closed) { stream.getTracks().forEach(t => t.stop()); return; }
+    this.stream = stream;
+    this.audio = new RadioAudio(this.ctx, stream, frame => {
+      if (this.host) this.room.frame(HOST, frame);
+      else this.guestAttempt?.link.sendVoice(frame);
+    });
+    await this.audio.init();
+    if (this.closed) return;
+    this.ctx.onstatechange = () => this.renderAudioButton();
+    await this.scanner.start(stream.getVideoTracks()[0]);
+    if (this.closed) return;
+    this.leaseTimer = setInterval(() => {
+      if (this.host) this.room.tick();
+      if (this.held && this.radioState.mode === 'tx') this.command({op: 'keep', press: this.held.press});
+    }, 700);
+    this.wake();
+    if (this.host) {
+      this.room.publish();
+      await this.invite();
+    } else {
+      optics('scan');
+      hint('Face your screen toward the host screen, about a handspan apart. Keep them facing until Talkie opens.');
+    }
+  }
+  async wake() {
+    if (this.closed || document.hidden || !navigator.wakeLock || this.wakeLock && !this.wakeLock.released) return;
+    try {
+      const lock = await navigator.wakeLock.request('screen');
+      if (this.closed) lock.release().catch(() => {}); else this.wakeLock = lock;
+    } catch {}
+  }
+  async restartCamera() {
+    if (this.closed || page !== 'pair' || !this.audio || this.restarting) return;
+    this.restarting = true;
+    try {
+      this.scanner.stop();
+      const stream = await navigator.mediaDevices.getUserMedia({video: cameraSettings, audio: false});
+      const track = stream.getVideoTracks()[0];
+      if (this.closed || page !== 'pair') { track.stop(); return; }
+      await this.scanner.start(track);
+    } finally { this.restarting = false; }
+  }
+  drop(attempt) {
+    if (!attempt) return;
+    clearTimeout(attempt.timeout);
+    if (this.pending === attempt) this.pending = null;
+    if (this.guestAttempt === attempt) this.guestAttempt = null;
+    attempt.link.close();
+  }
+  async invite() {
+    if (this.closed || !this.host || page !== 'pair') return;
+    this.drop(this.pending);
+    if (this.room.members.size >= CAPACITY) {
+      optics('wait', 'All 10 radios are paired.');
+      hint('Your group is ready.');
+      return;
+    }
+    const attempt = {invite: newInvite(), phase: 'generating'};
+    const link = new Link({
+      host: true, ready: () => {}, control: msg => this.fromGuest(attempt, msg),
+      voice: frame => { if (attempt.id) this.room.frame(attempt.id, frame); },
+      lost: reason => this.hostLost(attempt, reason)
+    });
+    attempt.link = link;
+    this.pending = attempt;
+    optics('wait', 'Creating local QR…');
+    try {
+      const sdp = await link.offer();
+      if (this.closed || this.pending !== attempt) return;
+      drawCode($('hostQr'), pack('offer', attempt.invite, sdp));
+      attempt.phase = 'offer';
+      optics('offer');
+      hint('Face the two screens toward each other. Pair one phone at a time. Tap the QR to refresh.');
+    } catch (e) {
+      if (this.pending !== attempt || this.closed) return;
+      this.drop(attempt);
+      optics('wait', 'Invitation unavailable');
+      hint(errorText(e));
+      $('retryCamera').textContent = 'Retry pairing';
+    }
+  }
+  readQR(text, seconds) {
+    if (this.closed || page !== 'pair' || !this.audio) return;
+    if (text.startsWith('TT1:') || text.startsWith('TT3:')) {
+      hint('That QR is from an older version. Open TrekTalk v9 on both phones.');
+      return;
+    }
+    if (this.host) {
+      const a = this.pending;
+      if (!a || a.phase !== 'offer' || !text.startsWith('TK9A:' + a.invite + ':')) return;
+      const decoded = unpack(text);
+      if (!decoded) return;
+      this.lastScan = seconds;
+      a.phase = 'linking';
+      hint('Reply read. Connecting over the hotspot…');
+      a.timeout = setTimeout(() => this.hostLost(a, 'Connection timed out. Check the hotspot and pair again.'), 20000);
+      a.link.accept(decoded.description).catch(e => this.hostLost(a, errorText(e)));
+    } else {
+      if (!text.startsWith('TK9O:') || this.guestAttempt?.welcomed) return;
+      if (this.guestAttempt && text.startsWith('TK9O:' + this.guestAttempt.invite + ':')) return;
+      const decoded = unpack(text);
+      if (!decoded) return;
+      this.lastScan = seconds;
+      this.answer(decoded);
+    }
+  }
+  async answer(decoded) {
+    this.drop(this.guestAttempt);
+    const a = {invite: decoded.invite};
+    try {
+      a.link = new Link({
+        host: false,
+        ready: () => a.link.send({op: 'hello', version: 9, name: this.name}),
+        control: msg => {
+          if (this.guestAttempt !== a || this.closed) return;
+          if (msg.op === 'welcome' && msg.invite === a.invite) {
+            a.welcomed = true;
+            a.link.send({op: 'here'});
+          } else if (a.welcomed) this.receive(msg);
+        },
+        voice: frame => { if (this.guestAttempt === a) this.audio.play(frame); },
+        lost: reason => this.guestLost(a, reason)
+      });
+      this.guestAttempt = a;
+      optics('wait', 'Preparing reply…');
+      hint('Keep both screens facing each other.');
+      const sdp = await a.link.answer(decoded.description);
+      if (this.closed || this.guestAttempt !== a || page !== 'pair') return;
+      drawCode($('replyQr'), pack('answer', a.invite, sdp));
+      optics('answer');
+      $('pairTitle').textContent = 'Pairing';
+      hint('Keep the screens facing. The host front camera reads this reply automatically.');
+      a.timeout = setTimeout(() => this.guestLost(a, 'The host did not confirm. Refresh the host QR and face the screens again.'), 24000);
+    } catch (e) {
+      if (this.guestAttempt === a) this.guestLost(a, errorText(e));
+      else if (!this.closed && !this.guestAttempt) hint(errorText(e));
+    }
+  }
+  fromGuest(a, msg) {
+    if (this.closed) return;
+    if (a.id) {
+      if (this.connections.get(a.id) !== a.link) return;
+      if (msg.op === 'leave') this.hostLost(a, 'Left the group.');
+      else this.room.input(a.id, msg);
+      return;
+    }
+    if (this.pending !== a || a.phase !== 'linking') return;
+    if (msg.op === 'hello' && msg.version === 9) {
+      a.name = displayName(msg.name, 'Hiker');
+      a.link.send({op: 'welcome', invite: a.invite});
+    }
+    if (msg.op === 'here' && a.name) {
+      clearTimeout(a.timeout);
+      a.id = this.room.add(a.name);
+      this.connections.set(a.id, a.link);
+      this.pending = null;
+      this.room.publish();
+      if (page === 'pair') this.invite();
+    }
+  }
+  hostLost(a, reason) {
+    if (this.closed) return;
+    if (a.id) {
+      if (this.connections.get(a.id) !== a.link) return;
+      this.connections.delete(a.id);
+      this.drop(a);
+      this.room.remove(a.id);
+      if (page === 'pair' && !this.pending) this.invite();
+    } else if (this.pending === a) {
+      this.drop(a);
+      if (page === 'pair') { hint(reason); this.invite(); }
+    }
+  }
+  guestLost(a, reason) {
+    if (this.closed || this.guestAttempt !== a) return;
+    this.drop(a);
+    if (page === 'radio') { end(reason + ' Ask the host to open pairing.'); return; }
+    optics('scan');
+    $('pairTitle').textContent = 'Scan host QR';
+    hint(reason);
+  }
+  enterRadio() {
+    view('radio');
+    this.scanner.stop();
+    $('add').hidden = !this.host || this.roster?.people.length >= CAPACITY;
+    this.renderAudioButton();
+    this.paintTargets();
+  }
+  go() {
+    if (!this.host || this.room.members.size < 2 || page !== 'pair') return;
+    // Preserve all confirmed links and let an already accepted reply finish.
+    if (this.pending?.phase !== 'linking') this.drop(this.pending);
+    this.enterRadio();
+    this.room.start();
+  }
+  async addPhone() {
+    if (!this.host || this.room.members.size >= CAPACITY) return;
+    this.release();
+    view('pair');
+    $('go').hidden = false;
+    $('go').disabled = false;
+    $('pairTitle').textContent = 'Pair another phone';
+    optics('wait', 'Starting front camera…');
+    await this.restartCamera();
+    if (!this.closed && page === 'pair' && this.pending?.phase !== 'linking') await this.invite();
+  }
+  receive(msg) {
+    if (this.closed) return;
+    if (msg.op === 'ended') { end('The host closed this group.'); return; }
+    if (msg.op === 'room') {
+      if (!Array.isArray(msg.people) || msg.people.length > CAPACITY || !msg.people.some(p => p.id === msg.self)) return;
+      this.roster = msg;
+      if (this.host) {
+        $('go').disabled = msg.people.length < 2;
+        $('pairMeta').textContent = 'Group ' + msg.code + ' · ' + (msg.people.length - 1) + ' paired';
+      } else if (page === 'pair') {
+        clearTimeout(this.guestAttempt.timeout);
+        this.enterRadio();
+      }
+      $('add').hidden = !this.host || msg.people.length >= CAPACITY;
+      $('roomMeta').textContent = 'Group ' + msg.code + ' · ' + msg.people.length + ' connected';
+      this.paintTargets();
+      return;
+    }
+    if (msg.op === 'denied') {
+      if (this.held?.press === msg.press) { this.audio.gate(0); this.held = null; this.paintFloor(); }
+      return;
+    }
+    if (msg.op !== 'floor') return;
+    this.radioState = msg;
+    if (msg.mode === 'tx') {
+      if (this.held?.press !== msg.press || this.held?.target !== msg.target || page !== 'radio' || document.hidden) {
+        this.audio.gate(0);
+        this.command({op: 'release', press: msg.press});
         return;
       }
+      this.audio.listen(0);
+      this.audio.gate(msg.token);
+    } else {
+      this.audio?.gate(0);
+      this.audio?.listen(msg.mode === 'rx' ? msg.token : 0);
     }
-    throw Error('No QR found. Take a closer photo with all four corners visible.');
-  } finally {
-    URL.revokeObjectURL(url);
+    this.paintFloor();
   }
+  paintTargets() {
+    if (page !== 'radio' || !this.roster) return;
+    const {self, people} = this.roster;
+    const members = people.filter(p => p.id !== self);
+    const key = JSON.stringify(members);
+    if (key !== this.renderKey) {
+      this.renderKey = key;
+      const container = $('targets');
+      // Keep existing elements when possible to preserve pointer capture.
+      const old = new Map(Array.from(container.children, b => [b.dataset.target, b]));
+      for (const {id, name} of [{id: ALL, name: 'everyone'}, ...members]) {
+        if (old.has(id)) { old.delete(id); continue; }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.target = id;
+        button.className = id === ALL ? 'all' : 'person';
+        const label = document.createElement('span');
+        label.textContent = 'Talk to ' + name;
+        const keyLabel = document.createElement('span');
+        keyLabel.className = 'key';
+        keyLabel.setAttribute('aria-hidden', 'true');
+        keyLabel.textContent = 'HOLD';
+        button.append(label, keyLabel);
+        container.append(button);
+      }
+      for (const [id, button] of old) {
+        if (this.held?.target === id) this.release();
+        button.remove();
+      }
+    }
+    this.paintFloor();
+  }
+  paintFloor() {
+    if (page !== 'radio' || !this.roster) return;
+    const {mode, name} = this.radioState;
+    const enabled = this.roster.started && this.roster.people.length > 1;
+    let label = 'Listening';
+    if (!this.roster.started) label = 'Paired. Waiting for the host to open Talkie.';
+    else if (this.roster.people.length < 2) label = 'Waiting for another radio.';
+    else if (mode === 'tx' && this.held) label = 'Transmitting · release to listen';
+    else if (mode === 'rx') label = 'Receiving from ' + name;
+    else if (mode === 'busy') label = 'Channel busy';
+    else if (this.held) label = 'Requesting channel…';
+    $('channel').dataset.mode = mode;
+    $('channelLabel').textContent = label;
+    for (const button of $('targets').children) {
+      const active = this.held?.target === button.dataset.target && mode === 'tx';
+      button.classList.toggle('held', active);
+      button.setAttribute('aria-pressed', String(active));
+      button.setAttribute('aria-disabled', String(!enabled || (!active && mode !== 'idle')));
+      button.lastElementChild.textContent = active ? 'ON AIR' : 'HOLD';
+    }
+  }
+  command(msg) {
+    if (this.host) this.room.input(HOST, msg);
+    else this.guestAttempt?.link.send(msg);
+  }
+  press(target, key) {
+    if (page !== 'radio' || !this.roster?.started || this.roster.people.length < 2 || this.held ||
+        this.radioState.mode !== 'idle' || document.hidden) return;
+    this.ctx.resume().catch(() => {});
+    this.held = {target, press: ++this.counter, key};
+    this.paintFloor();
+    this.command({op: 'ask', target, press: this.held.press});
+  }
+  release(key) {
+    if (!this.held || (key !== undefined && key !== this.held.key)) return;
+    const {press} = this.held;
+    this.held = null;
+    this.audio?.gate(0);
+    this.command({op: 'release', press});
+    this.paintFloor();
+  }
+  renderAudioButton() {
+    $('resume').hidden = page !== 'radio' || this.ctx.state === 'running';
+  }
+  close() {
+    if (this.closed) return;
+    this.release();
+    this.closed = true;
+    clearInterval(this.leaseTimer);
+    if (this.host) {
+      for (const link of this.connections.values()) { link.send({op: 'ended'}); link.close(); }
+      this.connections.clear();
+    } else this.guestAttempt?.link.send({op: 'leave'});
+    this.drop(this.pending);
+    this.drop(this.guestAttempt);
+    this.scanner.stop();
+    this.audio?.close();
+    this.stream?.getTracks().forEach(t => t.stop());
+    this.ctx?.close().catch(() => {});
+    this.wakeLock?.release().catch(() => {});
+  }
+}
+
+function end(message = '') {
+  current?.close();
+  current = null;
+  $('targets').replaceChildren();
+  view('home');
+  $('notice').textContent = message;
+}
+async function start(host) {
+  if (current) return;
+  const name = displayName($('name').value, host ? 'Host' : 'Hiker');
+  try { localStorage.setItem('trektalk-name', $('name').value.trim()); } catch {}
+  const session = new Session(host, name);
+  current = session;
+  try { await session.begin(); }
+  catch (e) { if (current === session) end(errorText(e)); }
+}
+try { $('name').value = localStorage.getItem('trektalk-name') || ''; } catch {}
+$('host').onclick = () => start(true);
+$('guest').onclick = () => start(false);
+$('go').onclick = () => current?.go();
+$('hostCard').onclick = () => { if (current?.pending?.phase === 'offer') current.invite(); };
+$('leave').onclick = () => end();
+$('add').onclick = () => current?.addPhone().catch(e => hint(errorText(e)));
+$('resume').onclick = () => current?.ctx.resume().catch(e => { $('channelLabel').textContent = errorText(e); });
+$('retryCamera').onclick = async () => {
+  $('tools').open = false;
+  const s = current;
+  if (!s) return;
+  try { await s.restartCamera(); if (s.host && !s.pending) await s.invite(); }
+  catch (e) { hint(errorText(e)); }
+};
+$('photo').onclick = () => { $('tools').open = false; $('photoFile').click(); };
+$('photoFile').onchange = async () => {
+  const file = $('photoFile').files[0];
+  $('photoFile').value = '';
+  const s = current;
+  if (!s || !file) return;
+  try {
+    const text = await s.scanner.photo(file);
+    if (s !== current || page !== 'pair') return;
+    const code = unpack(text);
+    if (!code || code.description.type !== (s.host ? 'answer' : 'offer') || (s.host && code.invite !== s.pending?.invite)) {
+      hint('This is not the current partner QR. Use the code on the other phone.');
+    } else s.readQR(text, 0);
+  } catch (e) { if (s === current) hint(errorText(e)); }
+};
+
+$('targets').onpointerdown = e => {
+  const button = e.target.closest('button[data-target]');
+  if (!button || !e.isPrimary || e.button !== 0) return;
+  e.preventDefault();
+  button.setPointerCapture(e.pointerId);
+  current?.press(button.dataset.target, e.pointerId);
+};
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  window.addEventListener(type, e => current?.release(e.pointerId), true);
+}
+$('targets').onkeydown = e => {
+  if (![' ', 'Enter'].includes(e.key) || !e.target.dataset.target) return;
+  e.preventDefault();
+  if (!e.repeat) current?.press(e.target.dataset.target, e.key);
+};
+window.addEventListener('keyup', e => current?.release(e.key));
+$('targets').oncontextmenu = e => e.preventDefault();
+window.addEventListener('blur', () => current?.release());
+window.addEventListener('pagehide', () => end());
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) current?.release();
+  else { current?.wake(); current?.renderAudioButton(); }
 });
+
+async function prepareOffline() {
+  if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
+  const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
+  const markReady = async () => {
+    const hit = await caches.match(new URL('./__trektalk_ready_v9__', location.href).href, {cacheName: 'trektalk-v9'});
+    if (hit) $('offline').textContent = 'Ready offline · v9';
+    return Boolean(hit);
+  };
+  if (await markReady()) return;
+  const watch = worker => worker?.addEventListener('statechange', () => {
+    if (['installed','activated'].includes(worker.state)) markReady().catch(() => {});
+    if (worker.state === 'redundant') $('offline').textContent = 'Offline files could not be saved. Reload while online.';
+  });
+  watch(reg.installing);
+  reg.addEventListener('updatefound', () => watch(reg.installing));
+  navigator.serviceWorker.addEventListener('controllerchange', () => markReady().catch(() => {}));
+  await navigator.serviceWorker.ready;
+  await markReady();
+}
+prepareOffline().catch(() => { $('offline').textContent = 'Offline files unavailable. Reopen this page while online.'; });
