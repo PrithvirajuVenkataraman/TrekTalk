@@ -10,9 +10,18 @@ const root=fileURLToPath(new URL('../', import.meta.url));
 // Run with Playwright Core installed and TREKTALK_CHROME pointing to Chrome.
 // Camera images are the actual partner canvases. WebRTC and the audio worklet run normally.
 let online=true;
+let relayOnline=true;
+const {exchange,localStore}=require('../server/mailbox.cjs');
+const store=localStore();
 const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.json':'application/json'};
 const server=createServer(async(req,res)=>{
   try {
+    if(req.url==='/api/pair' && req.method==='POST'){
+      if(!relayOnline){res.writeHead(503).end();return;}
+      let body='';for await(const chunk of req)body+=chunk;
+      const [status,msg]=await exchange(store,JSON.parse(body));
+      res.writeHead(status,{'Content-Type':'application/json'}).end(JSON.stringify(msg));return;
+    }
     if(!online){res.writeHead(503).end('offline');return;}
     const f=new URL(req.url,'http://localhost').pathname.slice(1)||'index.html';
     const bytes=await readFile(path.join(root,f));res.writeHead(200,{'Content-Type':types[path.extname(f)]||'text/plain','Cache-Control':'no-cache'});res.end(bytes);
@@ -22,30 +31,15 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const site='http://127.0.0.1:'+server.address().port;
 const browser=await pw.launch({executablePath:process.env.TREKTALK_CHROME || '/usr/bin/google-chrome',args:['--no-sandbox','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--allow-loopback-in-peer-connection','--autoplay-policy=no-user-gesture-required','--disable-background-timer-throttling']});
 const pages=[];
-let nearbyGuest;
-let missNextTone=false;
+
 try{
   function installMediaFixtures(){
     window.heard=0;window.cameraPicture=null;window.cameraRequests=0;
-    // The simulated air path carries only speaker PCM, never signaling messages.
-    window.hearSpeaker = encoded => {
-      const pcm=Int16Array.from(atob(encoded).match(/[\s\S]{2}/g), pair =>
-        pair.charCodeAt(0) | pair.charCodeAt(1)<<8);
-      const {c,dest}=window.tone;
-      const sound=c.createBuffer(1,pcm.length,16000);
-      sound.copyToChannel(Float32Array.from(pcm,x=>x/32768),0);
-      const src=c.createBufferSource();src.buffer=sound;src.connect(dest);src.start();
-    };
+    window.playbackStarts=0;
     const play=AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start=function(...args){
       if(this.buffer?.length===320 && this.buffer.sampleRate===16000 && this.buffer.getChannelData(0).some(n=>Math.abs(n)>0.01))window.heard++;
-      if(window.isTestHost && this.buffer?.sampleRate===16000 && this.buffer.length>320){
-        const pcm=Int16Array.from(this.buffer.getChannelData(0),x=>Math.round(x*32767));
-        const raw=new Uint8Array(pcm.buffer);
-        let binary='';
-        for(let i=0;i<raw.length;i+=8192)binary+=String.fromCharCode(...raw.subarray(i,i+8192));
-        window.emitSpeaker(btoa(binary));
-      }
+      window.playbackStarts++;
       return play.apply(this,args);
     };
     const rtc=RTCPeerConnection;
@@ -71,7 +65,7 @@ try{
       }
       if(constraints.video){
         window.cameraRequests++;
-        if(!window.isTestHost)throw Error('A guest must never request a camera');
+        if(window.isTestHost)throw Error('The host must never request a camera');
         if(constraints.video.facingMode?.exact !== 'environment') throw Error('Every camera request must require the rear camera');
         if(window.noRearCamera) throw new DOMException('Missing rear camera','OverconstrainedError');
         const canvas=document.createElement('canvas');canvas.width=640;canvas.height=640;
@@ -86,61 +80,36 @@ try{
     const ctx=await browser.newContext({viewport:{width:393,height:852}, ...(name==='iPhone' ? {userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15'} : {})});
     await ctx.grantPermissions(['microphone','camera']);
     await ctx.addInitScript(installMediaFixtures);
-    await ctx.exposeBinding('emitSpeaker',async(_source,encoded)=>{
-      if(missNextTone){missNextTone=false;return;}
-      if(nearbyGuest)await nearbyGuest.evaluate(data=>window.hearSpeaker(data),encoded);
-    });
     const p=await ctx.newPage();
     p.on('pageerror',e=>console.log('PAGE ERROR',name,e.message));p.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',name,m.text());});
-    await p.goto(site);await p.getByText('Ready offline · v12').waitFor({timeout:10000});await p.fill('#name',name);return p;
+    await p.goto(site);await p.getByText('Ready offline · v13').waitFor({timeout:10000});await p.fill('#name',name);return p;
   }
   const host=await phone('OnePlus'),iphone=await phone('iPhone'),third=await phone('Arun');
   pages.push(host,iphone,third);
   const more=[];
   for(let i=4;i<=10;i++) more.push(await phone('Hiker '+i));
   online=false;
-  await iphone.reload();await iphone.getByText('Ready offline · v12').waitFor();await iphone.fill('#name','');
-  await host.evaluate(()=>{window.isTestHost=true;window.noRearCamera=true;});
+  await iphone.reload();await iphone.getByText('Ready offline · v13').waitFor();await iphone.fill('#name','');
+  await host.evaluate(()=>{window.isTestHost=true;});
   await host.click('#host');
-  await host.getByText(/Rear camera unavailable/).waitFor();
-  await host.evaluate(()=>{window.noRearCamera=false;});
-  await host.click('#host');
+  assert.equal(await host.evaluate(()=>window.cameraRequests),0);
   async function imageOf(p,id){await p.locator(id).waitFor({state:'visible',timeout:10000});return p.locator(id).evaluate(e=>e.toDataURL());}
   async function point(p,data){await p.evaluate(data=>window.pointAt(data),data);}
   async function pair(guest, started=false){
-    nearbyGuest=guest;
-    const guestName=await guest.locator('#name').inputValue() || 'iPhone';
-    const countBefore=await host.locator('#scanList li').count();
+    const name=await guest.locator('#name').inputValue() || 'iPhone';
+    const hostStarts=await host.evaluate(()=>window.playbackStarts);
+    const guestStarts=await guest.evaluate(()=>window.playbackStarts);
+    await guest.evaluate(()=>{window.cameraPicture=null;});
     await guest.click('#guest');
-    const initial=await imageOf(guest,'#joinQr');
-    if(started && guest===third) {
-      await host.evaluate(()=>{window.failNextAnswer=true;});
-      await point(host,initial);
-      await host.locator('#scanList li').filter({hasText:'Arun'}).getByText('Pairing failed',{exact:true}).waitFor();
-      await host.evaluate(()=>{window.cameraPicture=null;});
-      await guest.locator('#tools summary').click();await guest.click('#refreshOffer');
-      await guest.waitForFunction(old=>!document.getElementById('joinQr').hidden &&
-        document.getElementById('joinQr').toDataURL()!==old,initial);
-    }
-    const offer=await imageOf(guest,'#joinQr');
-    assert.equal(await guest.evaluate(()=>window.cameraRequests),0);
-    await host.locator('#guide').waitFor({state:'visible'});
-    // Miss the first tone once. Move the QR out of view after the host reads it.
-    // Reconnection must finish over sound alone without another camera scan.
-    missNextTone=started && guest===third;
-    const start=Date.now();await point(host,offer);
-    await host.getByText('QR read',{exact:true}).waitFor();
-    const row=host.locator('#scanList li').filter({has:host.getByText(guestName,{exact:true})});
-    await row.getByText('Scanned · Connecting',{exact:true}).waitFor();
-    assert.equal(await row.count(),1);
-    assert.equal(await host.locator('#scanList li').count(),countBefore+(started && guest===third ? 0 : 1));
-    if(guest===third)assert.equal(await row.locator('small').innerText(),'Linux device');
-    assert.equal(await guest.locator('#scannedGuests').isVisible(),false);
-    await host.evaluate(()=>{window.cameraPicture=null;});
-    await guest.locator('#radio').waitFor({state:'visible',timeout:35000});
+    await guest.locator('#guide').waitFor({state:'visible'});
+    await point(guest,await imageOf(host,'#joinQr'));
+    await guest.locator('#radio').waitFor({state:'visible',timeout:45000});
+    const row=host.locator('#scanList li').filter({has:host.getByText(name,{exact:true})});
     await row.getByText('Connected',{exact:true}).waitFor();
-    console.log('One host scan, acoustic reply, guest entered Talkie in ms',Date.now()-start);
-    assert.equal(await guest.evaluate(()=>window.cameraRequests),0);
+    assert.equal(await row.count(),1);
+    assert.equal(await host.evaluate(()=>window.cameraRequests),0);
+    assert.equal(await host.evaluate(()=>window.playbackStarts),hostStarts);
+    assert.equal(await guest.evaluate(()=>window.playbackStarts),guestStarts);
     assert.match(await guest.locator('#channelLabel').innerText(),started ? /Listening/ : /Waiting for the host/);
   }
   await pair(iphone);await pair(third);
@@ -160,6 +129,7 @@ try{
     delta.forEach((n,i)=>assert.equal(n>0,expected.includes(i)));
     await Promise.all(pages.map(q=>q.getByText('Listening',{exact:true}).waitFor()));
   }
+  relayOnline=false;
   await transmit(iphone,'Talk to Arun',[2]);
   await transmit(host,'Talk to iPhone',[1]);
   await transmit(third,'Talk to everyone',[0,1]);
@@ -168,6 +138,7 @@ try{
   await host.waitForFunction(()=>document.getElementById('roomMeta').textContent.includes('2 connected'));
   assert.equal(await iphone.locator('#targets button').count(),2);
   // Reopen pairing without losing the existing radio. Refresh rotates just the pending offer.
+  relayOnline=true;
   await host.click('#add');
   await host.locator('#scanList li').filter({hasText:'Arun'}).getByText('Disconnected',{exact:true}).waitFor();
   assert.equal(await iphone.locator('#targets button').count(),2);
@@ -190,7 +161,7 @@ try{
   // Losing focus must release the active microphone and the shared channel.
   await iphone.evaluate(()=>window.dispatchEvent(new Event('blur')));
   await Promise.all(pages.map(p=>p.getByText('Listening',{exact:true}).waitFor()));
-  console.log('PASS: ten offline radios, one host scan, no guest camera, speaker to microphone pairing, retained roster, targeted and group audio, contention, refresh, rejoin and focus loss');
+  console.log('PASS: ten offline radios, one guest scan, no host camera, zero pairing playback, voice with the pairing service offline, retained roster, targeted and group audio, contention, refresh, rejoin and focus loss');
 }catch(e){
  console.error(String(e));
  for(const p of pages)console.log(await p.evaluate(()=>({screen:document.querySelector('section:not([hidden])')?.id,hint:document.querySelector('#pairHint')?.textContent,notice:document.querySelector('#notice')?.textContent,offline:document.querySelector('#offline')?.textContent,peers:window.peerReports.map(p=>[p.connectionState,p.iceGatheringState,(p.localDescription?.sdp||'').split('\n').filter(l=>l.includes('candidate:')).length]),ctx:window.tone?.c?.state})).catch(()=>({})));

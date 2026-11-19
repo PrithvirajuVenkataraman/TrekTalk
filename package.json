@@ -1,0 +1,6 @@
+{
+  "name": "trektalk",
+  "version": "13.0.0",
+  "private": true,
+  "dependencies": {"@vercel/functions": "3.11.3"}
+}

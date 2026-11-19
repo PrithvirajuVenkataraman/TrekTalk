@@ -1,31 +1,30 @@
 # TrekTalk
 
-An offline group radio for a shared Wi-Fi network or phone hotspot. Version 12 supports one host and up to nine guests. Sound and connection control go directly over local WebRTC data channels. Vercel distributes the static app before the trek.
+TrekTalk is a push-to-talk radio for up to ten phones on the same Wi-Fi network. Android and iOS use the same host and guest flow. Pairing is silent. The microphone is muted until the user holds a talk button and receives a channel grant.
 
-## First use
+## Join
 
-1. On each phone, open the HTTPS site while online. Wait for **Ready offline · v12**. If using an iPhone Home Screen installation, open the installed app while online too.
-2. Turn off mobile data. Keep the OnePlus hotspot on and connect each guest to it. Leave the app in the foreground.
-3. On the guest phone enter a name, tap **Show my join QR**, and allow microphone access. Leave this QR on screen. The guest never opens a camera.
-4. On the host enter a name and tap **Host a group**. Allow rear camera and microphone access. Point the rear camera at the guest QR once. Keep the phones close with the host speaker audible and headphones disconnected.
-5. The host sends its connection reply as a short series of audible tones. The guest microphone decodes it locally and Talkie opens automatically when the connection is confirmed. The host can then scan the next guest. If sound is missed the host retries automatically. To replace an expired guest invitation use **Options → Refresh join QR offline** on the guest.
-6. Tap **Go to Talkie** on the host when everyone has paired. All paired guests can now transmit.
-7. Hold **Talk to everyone** to broadcast. Hold **Talk to [name]** for an individual transmission. Release to listen. The host grants one speaker the channel at a time. A private transmission is forwarded only to the selected listener. The host routes all guest traffic.
-8. The host can select **Pair another phone** to add or reconnect a guest. Leaving the host group ends it. Closing a guest removes that radio from the roster.
+1. Open TrekTalk v13 on each phone before the trek. Wait for **Ready offline · v13** and connect all phones to the same Wi-Fi or hotspot.
+2. Tap **Host a group** to create a fresh group QR. Keep the QR visible while people join.
+3. Each guest taps **Scan a QR code** and scans the host QR once with the rear camera. The host sees their name and connection status below the QR. Guests enter Talkie automatically.
+4. Tap **Go to Talkie** on the host. Hold **Talk to everyone** or an individual person's button to speak. Release to listen. Keep TrekTalk in the foreground.
 
-## How it works
+## Silent pairing service
 
-- Each guest creates an independent WebRTC offer and a random 128-bit invitation key. The QR includes the guest name and device label. The host lists the guest immediately after scanning and marks the entry Connected after the guest confirms. Failed or disconnected guests remain labeled on the host pairing screen. It compresses its answer using the offer as a dictionary and authenticates and encrypts the answer with AES-GCM. An audible multi-frequency signal carries the answer to the nearby guest. No internet or local signaling server is required.
-- A synchronization sweep, calibration tones and interleaved parity blocks help the receiver decode the audio. The guest accepts only a reply authenticated with its invitation key. Both phones must use v12. The microphone listens locally during guest pairing and returns to push-to-talk mode on connection.
-- Two local data channels carry reliable ordered control and time-sensitive unordered voice. Microphone audio is sampled at 16 kHz, encoded as 20 ms µ-law frames and played through Web Audio. The microphone track starts muted. Transmission begins only after a channel grant and stops on release, cancellation, loss of focus or disconnection.
-- The hub checks the grant, sender and destination of every audio packet. A short renewable lease clears abandoned transmissions. No audio is stored. Individual transmissions pass through the host, which must be trusted.
-- The camera stops when Talkie opens. Rear camera focus, lighting, permissions and local network setup affect pairing time. There is no guaranteed scan time, range, screen-lock operation or emergency service connection. Stay within hotspot range. The hotspot must permit local traffic to its host.
-- If the host shows **QR read** but the guest still shows its code, check the host media volume and guest microphone permission. Keep the apps open and the phones close. Check that both use the same hotspot.
+The QR carries a random 128-bit group secret. Browsers exchange encrypted WebRTC offers and answers using a short-lived HTTPS mailbox. Room names, device labels and local connection details are encrypted, and voice goes over local WebRTC data channels. People who can see the QR can request to join. **Refresh group QR** rotates the invitation for new joins. Confirmed members keep their voice connections.
+
+The default mailbox runs on Vercel and needs internet for a new join. Established radios keep working on the shared hotspot after internet access is lost. A cached website alone cannot receive another phone's connection reply.
+
+For new joins without internet, run the included local pairing service on a device on the same Wi-Fi. It needs Node.js and a TLS certificate for its local address that each phone trusts. For example:
+
+```sh
+node server/local.cjs certificate.pem private-key.pem 8443
+```
+
+Before joining, enter that service's HTTPS address in **Pairing settings** on every phone. Allow local network access when the browser asks. The service holds encrypted packets in memory for 90 seconds. No cloud fallback occurs when a local service is selected. Keep Wi-Fi peer communication enabled. A hotspot alone does not supply the pairing service.
 
 ## Deployment and checks
 
-Static site, no build, database or server keys. Import the repository in Vercel, choose **Other**, use the root directory, and deploy over HTTPS. A service worker saves all scripts, the audio worklet and the QR libraries. Versioned asset URLs prevent earlier cached scripts from mixing with this version.
+Deploy the repository as a static site with its Node function on Vercel. The same-origin endpoint is /api/pair. It uses the Vercel Runtime Cache with a 90-second TTL. If the cache or network is unavailable the app reports a pairing error.
 
-Run `node --test tests/*.cjs` for the protocol and channel checks. For a physical test, verify guest-to-host, host-to-guest, guest-to-guest, broadcast, simultaneous press, release, disconnect and rejoin with mobile data off. Test camera speed and loudspeaker output on the actual phones.
-
-Bundled libraries: qrcode-generator, jsQR and pako. See the license notices in vendor.
+Run `node --test tests/*.cjs` for routing and mailbox checks. The browser workflow exercises a single guest scan, asserts zero audio playback during pairing, and tests targeted and broadcast voice after the signaling endpoint is disconnected. Physical iOS and Android combinations need field testing.

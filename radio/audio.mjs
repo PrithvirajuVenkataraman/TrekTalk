@@ -16,35 +16,15 @@ export class RadioAudio {
     this.sequences = new Set();
   }
   async init() {
-    await this.context.audioWorklet.addModule('./radio/capture.worklet.js?v=12');
+    await this.context.audioWorklet.addModule('./radio/capture.worklet.js?v=13');
     this.capture = new AudioWorkletNode(this.context, 'trek-capture');
     this.mic = this.context.createMediaStreamSource(new MediaStream([this.track]));
     this.mic.connect(this.capture);
     // The worklet has a silent output. Keeping it connected drives its render loop.
     this.capture.connect(this.context.destination);
     this.capture.port.onmessage = ({data}) => {
-      if (data instanceof Float32Array) this.reader?.push(data);
-      else if (this.token && new DataView(data).getUint32(0) === this.token) this.transmit(data);
+      if (this.token && new DataView(data).getUint32(0) === this.token) this.transmit(data);
     };
-  }
-  pairing(reader) {
-    this.reader = reader;
-    this.track.enabled = Boolean(reader || this.token);
-    this.capture.port.postMessage(reader ? 'pairing' : this.token);
-  }
-  playTone(samples) {
-    this.stopTone();
-    const source = this.context.createBufferSource();
-    source.buffer = this.context.createBuffer(1, samples.length, 16000);
-    source.buffer.copyToChannel(samples, 0);
-    source.connect(this.context.destination);
-    source.onended = () => { source.disconnect(); if (this.tone === source) this.tone = null; };
-    this.tone = source;
-    source.start();
-    return source.buffer.duration;
-  }
-  stopTone() {
-    if (this.tone) { this.tone.stop(); this.tone = null; }
   }
   gate(token) {
     if (this.token === token) return;
@@ -87,7 +67,6 @@ export class RadioAudio {
     source.start(when);
   }
   close() {
-    this.stopTone();
     this.gate(0);
     this.track.stop();
     this.capture?.disconnect();

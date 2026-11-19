@@ -8,19 +8,19 @@
   <title>TrekTalk</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./icon.svg">
-  <link rel="stylesheet" href="./style.css?v=12">
+  <link rel="stylesheet" href="./style.css?v=13">
 </head>
 <body>
 <main>
   <header>
     <span class="brand"><img src="./icon.svg" alt="" width="34" height="34">TrekTalk</span>
-    <span class="version">v12</span>
+    <span class="version">v13</span>
     <details id="tools" hidden>
       <summary>Options</summary>
       <div class="menu">
         <p id="pairTiming" class="small" hidden></p>
         <button id="photo" type="button">Read QR from photo</button>
-        <button id="refreshOffer" type="button" hidden>Refresh join QR offline</button>
+        <button id="refreshOffer" type="button" hidden>Refresh group QR</button>
         <button id="retryCamera" type="button">Restart rear camera</button>
         <button id="leave" type="button">Leave group</button>
       </div>
@@ -28,12 +28,17 @@
   </header>
   <section id="home">
     <h1>Group radio</h1>
-    <p>Join the same hotspot. Keep both screens on.</p>
+    <p>Join the same hotspot. For new connections, use Vercel online or a local service offline.</p>
+    <details id="pairSettings"><summary>Pairing settings</summary>
+      <label for="relay">Local pairing service (optional)</label>
+      <input id="relay" type="text" inputmode="url" placeholder="https://radio.local:8443" autocapitalize="none" spellcheck="false">
+      <p class="small">For offline joining, enter the same local HTTPS service on all phones. An empty field uses Vercel and needs internet to join. Voice uses the hotspot.</p>
+    </details>
     <label for="name">Your name</label>
     <input id="name" type="text" maxlength="24" placeholder="Name on the radio" autocomplete="nickname">
     <div class="startActions">
       <button id="host" class="primary" type="button">Host a group</button>
-      <button id="guest" type="button">Show my join QR</button>
+      <button id="guest" type="button">Scan a QR code</button>
     </div>
     <p id="offline" class="small" role="status">Saving files for offline use…</p>
     <p id="notice" role="alert"></p>
@@ -45,7 +50,7 @@
     <div class="optics" id="optics">
       <video id="camera" muted playsinline autoplay aria-label="Camera preview"></video>
       <div id="guide" aria-hidden="true"></div>
-      <canvas id="joinQr" class="qrCard" aria-label="Guest join QR" hidden></canvas>
+      <canvas id="joinQr" class="qrCard" aria-label="Group QR code" hidden></canvas>
       <div id="preparing" aria-live="polite">Starting camera…</div>
     </div>
     <div id="scannedGuests" hidden>
@@ -53,7 +58,6 @@
       <p id="noScans">No guests scanned yet.</p>
       <ul id="scanList" aria-label="Scanned guests" aria-live="polite" aria-relevant="additions text"></ul>
     </div>
-    <button id="pairAudio" type="button" hidden>Enable pairing sound</button>
     <button id="go" class="primary" type="button" hidden disabled>Go to Talkie</button>
   </section>
   <section id="radio" hidden>
@@ -69,7 +73,6 @@
 </main>
 <script src="./vendor/qr.js"></script>
 <script src="./vendor/scan.js"></script>
-<script src="./vendor/pako.js"></script>
-<script type="module" src="./app.js?v=12"></script>
+<script type="module" src="./app.js?v=13"></script>
 </body>
 </html>
