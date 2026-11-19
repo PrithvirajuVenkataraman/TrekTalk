@@ -1,26 +1,26 @@
 # TrekTalk
 
-An offline group radio for a shared Wi-Fi network or phone hotspot. Version 10 supports one host and up to nine guests. Sound and connection control go directly over local WebRTC data channels. Vercel distributes the static app before the trek.
+An offline group radio for a shared Wi-Fi network or phone hotspot. Version 11 supports one host and up to nine guests. Sound and connection control go directly over local WebRTC data channels. Vercel distributes the static app before the trek.
 
 ## First use
 
-1. On each phone, open the HTTPS site while online. Wait for **Ready offline · v10**. If using an iPhone Home Screen installation, open the installed app while online too.
+1. On each phone, open the HTTPS site while online. Wait for **Ready offline · v11**. If using an iPhone Home Screen installation, open the installed app while online too.
 2. Turn off mobile data. Keep the OnePlus hotspot on and connect each guest to it. Leave the app in the foreground.
-3. Enter a name on each phone. On the OnePlus choose **Host a group**. On each guest choose **Scan host QR**. Allow the rear camera and microphone when asked.
-4. Pair one guest at a time. Point the guest’s rear camera at the host QR. When a reply appears on the guest screen, tap the QR on the host screen to open the viewfinder. Point the host’s rear camera at the reply. The guest enters Talkie automatically when the host confirms. The host displays a new invitation for each additional guest.
-5. Under **Options**, the host can select **Show invitation again** to display the same QR or **Refresh QR offline** to replace it. Refreshing keeps everyone already paired. **Options** includes reading a photo and restarting the camera.
-6. Once the desired guests are paired, tap **Go to Talkie** on the host. All paired guests can now transmit. A phone that has only scanned the invitation still has to complete its return exchange.
+3. On the guest phone enter a name, tap **Show my join QR**, and allow microphone access. Leave this QR on screen. The guest never opens a camera.
+4. On the host enter a name and tap **Host a group**. Allow rear camera and microphone access. Point the rear camera at the guest QR once. Keep the phones close with the host speaker audible and headphones disconnected.
+5. The host sends its connection reply as a short series of audible tones. The guest microphone decodes it locally and Talkie opens automatically when the connection is confirmed. The host can then scan the next guest. If sound is missed the host retries automatically. To replace an expired guest invitation use **Options → Refresh join QR offline** on the guest.
+6. Tap **Go to Talkie** on the host when everyone has paired. All paired guests can now transmit.
 7. Hold **Talk to everyone** to broadcast. Hold **Talk to [name]** for an individual transmission. Release to listen. The host grants one speaker the channel at a time. A private transmission is forwarded only to the selected listener. The host routes all guest traffic.
 8. The host can select **Pair another phone** to add or reconnect a guest. Leaving the host group ends it. Closing a guest removes that radio from the roster.
 
 ## How it works
 
-- Each guest has an independent WebRTC connection to the host. A compact QR carries only the data-channel session description, including local ICE addresses. The guest and host each scan once with their rear camera. Both scans work offline.
-- The six-digit number identifies the group. New invitations have independent random nonces and WebRTC credentials. Each reply must match the current invitation. The v10 release retains the v9 pairing protocol. Update both phones to use the rear camera on each.
+- Each guest creates an independent WebRTC offer and a random 128-bit invitation key. The host scans the QR containing both. It compresses its answer using the offer as a dictionary and authenticates and encrypts the answer with AES-GCM. An audible multi-frequency signal carries the answer to the nearby guest. No internet or local signaling server is required.
+- A synchronization sweep, calibration tones and interleaved parity blocks help the receiver decode the audio. The guest accepts only a reply authenticated with its invitation key. Both phones must use v11. The microphone listens locally during guest pairing and returns to push-to-talk mode on connection.
 - Two local data channels carry reliable ordered control and time-sensitive unordered voice. Microphone audio is sampled at 16 kHz, encoded as 20 ms µ-law frames and played through Web Audio. The microphone track starts muted. Transmission begins only after a channel grant and stops on release, cancellation, loss of focus or disconnection.
 - The hub checks the grant, sender and destination of every audio packet. A short renewable lease clears abandoned transmissions. No audio is stored. Individual transmissions pass through the host, which must be trusted.
 - The camera stops when Talkie opens. Rear camera focus, lighting, permissions and local network setup affect pairing time. There is no guaranteed scan time, range, screen-lock operation or emergency service connection. Stay within hotspot range. The hotspot must permit local traffic to its host.
-- If both screens show a QR, tap the host QR and aim the host rear camera at the guest reply. If needed, use **Options → Read QR from photo**. Switch back to the TrekTalk screen after taking a picture. Keep the host QR unchanged during a pairing attempt.
+- If the host shows **QR read** but the guest still shows its code, check the host media volume and guest microphone permission. Keep the apps open and the phones close. Check that both use the same hotspot.
 
 ## Deployment and checks
 

@@ -38,7 +38,7 @@ function unbase45(text) {
 }
 
 export function newInvite() {
-  return Array.from(crypto.getRandomValues(new Uint8Array(6)), n => n.toString(16).padStart(2, '0')).join('').toUpperCase();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
 export function roomNumber() {
@@ -48,31 +48,18 @@ export function roomNumber() {
 }
 
 export function pack(type, invite, sdp) {
-  if (!['offer', 'answer'].includes(type) || !/^[0-9A-F]{12}$/.test(invite)) throw Error('Invalid invitation.');
+  if (!['offer', 'answer'].includes(type) || !/^[0-9A-F]{32}$/.test(invite)) throw Error('Invalid invitation.');
   const compressed = globalThis.pako.deflateRaw(utf8.encode(sdp), {level: 9, dictionary});
-  return 'TK9' + (type === 'offer' ? 'O' : 'A') + ':' + invite + ':' + base45(compressed) + '*';
+  return 'TK11' + (type === 'offer' ? 'O' : 'A') + ':' + invite + ':' + base45(compressed) + '*';
 }
 
 export function unpack(text) {
   if (typeof text !== 'string' || text.length > 4096) return null;
-  const header = /^TK9([OA]):([0-9A-F]{12}):/.exec(text);
+  const header = /^TK11([OA]):([0-9A-F]{32}):/.exec(text);
   if (!header || !text.endsWith('*')) return null;
   try {
-    const inflater = new globalThis.pako.Inflate({raw: true, dictionary, chunkSize: 8192});
-    const chunks = [];
-    let total = 0;
-    inflater.onData = chunk => {
-      total += chunk.length;
-      if (total > 32768) throw Error('Oversized invitation.');
-      chunks.push(chunk);
-    };
-    inflater.push(unbase45(text.slice(header[0].length, -1)), true);
-    if (inflater.err || !inflater.ended || !total) return null;
-    const bytes = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    const sdp = new TextDecoder('utf-8', {fatal: true}).decode(bytes);
-    if (!sdp.startsWith('v=0\r\n') || !/^m=application /m.test(sdp) || !/^a=fingerprint:/m.test(sdp)) return null;
+    const sdp = inflateSDP(unbase45(text.slice(header[0].length, -1)), dictionary);
+    if (!sdp) return null;
     return {invite: header[2], description: {type: header[1] === 'O' ? 'offer' : 'answer', sdp}};
   } catch { return null; }
 }
@@ -93,4 +80,45 @@ export function drawCode(canvas, text) {
       if (qr.isDark(r, c)) ctx.fillRect((c + 4) * scale, (r + 4) * scale, scale, scale);
     }
   }
+}
+
+function inflateSDP(compressed, dictionary) {
+    const inflater = new globalThis.pako.Inflate({raw: true, dictionary, chunkSize: 8192});
+    const chunks = [];
+    let total = 0;
+    inflater.onData = chunk => {
+      total += chunk.length;
+      if (total > 32768) throw Error('Oversized invitation.');
+      chunks.push(chunk);
+    };
+    inflater.push(compressed, true);
+    if (inflater.err || !inflater.ended || !total) return null;
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    const sdp = new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+    if (!sdp.startsWith('v=0\r\n') || !/^m=application /m.test(sdp) || !/^a=fingerprint:/m.test(sdp)) return null;
+    return sdp;
+}
+
+async function invitationKey(invite) {
+  const raw = Uint8Array.from(invite.match(/../g), part => parseInt(part, 16));
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt','decrypt']);
+}
+
+// The scanned QR supplies the secret and the exact offer used as the dictionary.
+export async function sealAnswer(invite, offer, answer) {
+  const data = globalThis.pako.deflateRaw(utf8.encode(answer), {dictionary:utf8.encode(offer), level:9});
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt({name:'AES-GCM', iv}, await invitationKey(invite), data);
+  const result = new Uint8Array(12 + cipher.byteLength);
+  result.set(iv); result.set(new Uint8Array(cipher),12);
+  return result;
+}
+export async function openAnswer(invite, offer, packet) {
+  try {
+    const data = await crypto.subtle.decrypt({name:'AES-GCM', iv:packet.subarray(0,12)}, await invitationKey(invite), packet.subarray(12));
+    const sdp = inflateSDP(new Uint8Array(data), utf8.encode(offer));
+    return sdp ? {type:'answer', sdp} : null;
+  } catch { return null; }
 }

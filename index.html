@@ -8,20 +8,19 @@
   <title>TrekTalk</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./icon.svg">
-  <link rel="stylesheet" href="./style.css?v=10">
+  <link rel="stylesheet" href="./style.css?v=11">
 </head>
 <body>
 <main>
   <header>
     <span class="brand"><img src="./icon.svg" alt="" width="34" height="34">TrekTalk</span>
-    <span class="version">v10</span>
+    <span class="version">v11</span>
     <details id="tools" hidden>
       <summary>Options</summary>
       <div class="menu">
         <p id="pairTiming" class="small" hidden></p>
         <button id="photo" type="button">Read QR from photo</button>
-        <button id="showOffer" type="button" hidden>Show invitation again</button>
-        <button id="refreshOffer" type="button" hidden>Refresh QR offline</button>
+        <button id="refreshOffer" type="button" hidden>Refresh join QR offline</button>
         <button id="retryCamera" type="button">Restart rear camera</button>
         <button id="leave" type="button">Leave group</button>
       </div>
@@ -34,7 +33,7 @@
     <input id="name" type="text" maxlength="24" placeholder="Name on the radio" autocomplete="nickname">
     <div class="startActions">
       <button id="host" class="primary" type="button">Host a group</button>
-      <button id="guest" type="button">Scan host QR</button>
+      <button id="guest" type="button">Show my join QR</button>
     </div>
     <p id="offline" class="small" role="status">Saving files for offline use…</p>
     <p id="notice" role="alert"></p>
@@ -46,12 +45,10 @@
     <div class="optics" id="optics">
       <video id="camera" muted playsinline autoplay aria-label="Camera preview"></video>
       <div id="guide" aria-hidden="true"></div>
-      <button type="button" class="qrCard" id="hostCard" hidden aria-label="Scan guest reply with rear camera">
-        <canvas id="hostQr" aria-label="Group invitation QR code"></canvas>
-      </button>
-      <canvas id="replyQr" class="qrCard" aria-label="Automatic pairing reply" hidden></canvas>
+      <canvas id="joinQr" class="qrCard" aria-label="Guest join QR" hidden></canvas>
       <div id="preparing" aria-live="polite">Starting camera…</div>
     </div>
+    <button id="pairAudio" type="button" hidden>Enable pairing sound</button>
     <button id="go" class="primary" type="button" hidden disabled>Go to Talkie</button>
   </section>
   <section id="radio" hidden>
@@ -68,6 +65,6 @@
 <script src="./vendor/qr.js"></script>
 <script src="./vendor/scan.js"></script>
 <script src="./vendor/pako.js"></script>
-<script type="module" src="./app.js?v=10"></script>
+<script type="module" src="./app.js?v=11"></script>
 </body>
 </html>

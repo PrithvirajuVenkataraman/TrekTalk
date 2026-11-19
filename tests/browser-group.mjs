@@ -22,12 +22,29 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const site='http://127.0.0.1:'+server.address().port;
 const browser=await pw.launch({executablePath:process.env.TREKTALK_CHROME || '/usr/bin/google-chrome',args:['--no-sandbox','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--allow-loopback-in-peer-connection','--autoplay-policy=no-user-gesture-required','--disable-background-timer-throttling']});
 const pages=[];
+let nearbyGuest;
 try{
   function installMediaFixtures(){
-    window.heard=0;window.cameraPicture=null;window.qrDecoded=[];
+    window.heard=0;window.cameraPicture=null;window.cameraRequests=0;
+    // The simulated air path carries only speaker PCM, never signaling messages.
+    window.hearSpeaker = encoded => {
+      const pcm=Int16Array.from(atob(encoded).match(/[\s\S]{2}/g), pair =>
+        pair.charCodeAt(0) | pair.charCodeAt(1)<<8);
+      const {c,dest}=window.tone;
+      const sound=c.createBuffer(1,pcm.length,16000);
+      sound.copyToChannel(Float32Array.from(pcm,x=>x/32768),0);
+      const src=c.createBufferSource();src.buffer=sound;src.connect(dest);src.start();
+    };
     const play=AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start=function(...args){
       if(this.buffer?.length===320 && this.buffer.sampleRate===16000 && this.buffer.getChannelData(0).some(n=>Math.abs(n)>0.01))window.heard++;
+      if(window.isTestHost && this.buffer?.sampleRate===16000 && this.buffer.length>320){
+        const pcm=Int16Array.from(this.buffer.getChannelData(0),x=>Math.round(x*32767));
+        const raw=new Uint8Array(pcm.buffer);
+        let binary='';
+        for(let i=0;i<raw.length;i+=8192)binary+=String.fromCharCode(...raw.subarray(i,i+8192));
+        window.emitSpeaker(btoa(binary));
+      }
       return play.apply(this,args);
     };
     const rtc=RTCPeerConnection;
@@ -48,6 +65,8 @@ try{
         tracks.push(...dest.stream.getAudioTracks());
       }
       if(constraints.video){
+        window.cameraRequests++;
+        if(!window.isTestHost)throw Error('A guest must never request a camera');
         if(constraints.video.facingMode?.exact !== 'environment') throw Error('Every camera request must require the rear camera');
         if(window.noRearCamera) throw new DOMException('Missing rear camera','OverconstrainedError');
         const canvas=document.createElement('canvas');canvas.width=640;canvas.height=640;
@@ -62,36 +81,44 @@ try{
     const ctx=await browser.newContext({viewport:{width:393,height:852}});
     await ctx.grantPermissions(['microphone','camera']);
     await ctx.addInitScript(installMediaFixtures);
+    await ctx.exposeBinding('emitSpeaker',async(_source,encoded)=>{
+      if(nearbyGuest)await nearbyGuest.evaluate(data=>window.hearSpeaker(data),encoded);
+    });
     const p=await ctx.newPage();
     p.on('pageerror',e=>console.log('PAGE ERROR',name,e.message));p.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',name,m.text());});
-    await p.goto(site);await p.getByText('Ready offline · v10').waitFor({timeout:10000});await p.fill('#name',name);return p;
+    await p.goto(site);await p.getByText('Ready offline · v11').waitFor({timeout:10000});await p.fill('#name',name);return p;
   }
   const host=await phone('OnePlus'),iphone=await phone('iPhone'),third=await phone('Arun');
   pages.push(host,iphone,third);
   const more=[];
   for(let i=4;i<=10;i++) more.push(await phone('Hiker '+i));
   online=false;
-  await iphone.reload();await iphone.getByText('Ready offline · v10').waitFor();await iphone.fill('#name','iPhone');
+  await iphone.reload();await iphone.getByText('Ready offline · v11').waitFor();await iphone.fill('#name','iPhone');
+  await host.evaluate(()=>{window.isTestHost=true;window.noRearCamera=true;});
+  await host.click('#host');
+  await host.getByText(/Rear camera unavailable/).waitFor();
+  await host.evaluate(()=>{window.noRearCamera=false;});
   await host.click('#host');
   async function imageOf(p,id){await p.locator(id).waitFor({state:'visible',timeout:10000});return p.locator(id).evaluate(e=>e.toDataURL());}
   async function point(p,data){await p.evaluate(data=>window.pointAt(data),data);}
   async function pair(guest, started=false){
-    await guest.evaluate(()=>{window.cameraPicture=null;});
-    await guest.click('#guest');await guest.locator('#guide').waitFor({state:'visible',timeout:8000});
-    const offer=await imageOf(host,'#hostQr');
-    const start=Date.now();await point(guest,offer);
-    const reply=await imageOf(guest,'#replyQr');const read=Date.now();
-    await host.getByRole('button',{name:'Scan guest reply with rear camera'}).click();
+    nearbyGuest=guest;
+    await guest.click('#guest');
+    const initial=await imageOf(guest,'#joinQr');
+    if(started && guest===third) {
+      await guest.locator('#tools summary').click();await guest.click('#refreshOffer');
+      await guest.waitForFunction(old=>!document.getElementById('joinQr').hidden &&
+        document.getElementById('joinQr').toDataURL()!==old,initial);
+    }
+    const offer=await imageOf(guest,'#joinQr');
+    assert.equal(await guest.evaluate(()=>window.cameraRequests),0);
     await host.locator('#guide').waitFor({state:'visible'});
-    await point(host,reply);
-    await guest.locator('#radio').waitFor({state:'visible',timeout:15000});
-    console.log('Scanned and paired through camera pipeline',{offerToReplyMs:read-start,replyToRoomMs:Date.now()-read});
+    const start=Date.now();await point(host,offer);
+    await guest.locator('#radio').waitFor({state:'visible',timeout:35000});
+    console.log('One host scan, acoustic reply, guest entered Talkie in ms',Date.now()-start);
+    assert.equal(await guest.evaluate(()=>window.cameraRequests),0);
     assert.match(await guest.locator('#channelLabel').innerText(),started ? /Listening/ : /Waiting for the host/);
   }
-  await iphone.evaluate(()=>{window.noRearCamera=true;});
-  await iphone.click('#guest');
-  await iphone.getByText(/Rear camera unavailable/).waitFor();
-  await iphone.evaluate(()=>{window.noRearCamera=false;});
   await pair(iphone);await pair(third);
   assert.match(await host.locator('#pairMeta').innerText(),/2 paired/);
   await host.click('#go');
@@ -118,13 +145,6 @@ try{
   assert.equal(await iphone.locator('#targets button').count(),2);
   // Reopen pairing without losing the existing radio. Refresh rotates just the pending offer.
   await host.click('#add');
-  const oldOffer=await imageOf(host,'#hostQr');
-  await host.click('#hostCard');
-  await host.locator('#tools summary').click();await host.click('#showOffer');
-  assert.equal(await imageOf(host,'#hostQr'),oldOffer);
-  await host.locator('#tools summary').click();await host.click('#refreshOffer');
-  await host.waitForFunction(old => !document.getElementById('hostCard').hidden &&
-    document.getElementById('hostQr').toDataURL() !== old,oldOffer);
   assert.equal(await iphone.locator('#targets button').count(),2);
   await pair(third,true);
   for(const hiker of more){pages.push(hiker);await pair(hiker,true);}
@@ -144,7 +164,7 @@ try{
   // Losing focus must release the active microphone and the shared channel.
   await iphone.evaluate(()=>window.dispatchEvent(new Event('blur')));
   await Promise.all(pages.map(p=>p.getByText('Listening',{exact:true}).waitFor()));
-  console.log('PASS: ten offline radios, rear camera only, two rear scans, retained roster, targeted and group audio, contention, refresh, rejoin and focus loss');
+  console.log('PASS: ten offline radios, one host scan, no guest camera, speaker to microphone pairing, retained roster, targeted and group audio, contention, refresh, rejoin and focus loss');
 }catch(e){
  console.error(String(e));
  for(const p of pages)console.log(await p.evaluate(()=>({screen:document.querySelector('section:not([hidden])')?.id,hint:document.querySelector('#pairHint')?.textContent,notice:document.querySelector('#notice')?.textContent,offline:document.querySelector('#offline')?.textContent,peers:window.peerReports.map(p=>[p.connectionState,p.iceGatheringState,(p.localDescription?.sdp||'').split('\n').filter(l=>l.includes('candidate:')).length]),ctx:window.tone?.c?.state})).catch(()=>({})));

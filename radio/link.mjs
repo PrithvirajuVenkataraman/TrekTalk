@@ -33,7 +33,7 @@ async function localDescription(pc, description) {
 }
 
 export class Link {
-  constructor({host, ready, control, voice, lost}) {
+  constructor({initiator, ready, control, voice, lost}) {
     this.pc = new RTCPeerConnection({iceServers: [], bundlePolicy: 'max-bundle'});
     this.channels = {};
     this.closed = false;
@@ -73,7 +73,7 @@ export class Link {
       if (state === 'disconnected') this.grace = setTimeout(() => this.fail('Lost the hotspot connection.'), 4000);
       if (state === 'failed' || state === 'closed') this.fail('The local connection ended.');
     };
-    if (host) {
+    if (initiator) {
       attach(this.pc.createDataChannel('control', {ordered: true}));
       attach(this.pc.createDataChannel('voice', {ordered: false, maxRetransmits: 0}));
     }

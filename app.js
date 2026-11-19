@@ -1,8 +1,9 @@
-import {newInvite, roomNumber, pack, unpack, drawCode} from './radio/pairing.mjs?v=10';
-import {Link} from './radio/link.mjs?v=10';
-import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=10';
-import {RadioAudio} from './radio/audio.mjs?v=10';
-import {Scanner} from './radio/scanner.mjs?v=10';
+import {ToneReader, renderTone} from './radio/sound.mjs?v=11';
+import {newInvite, roomNumber, pack, unpack, drawCode, sealAnswer, openAnswer} from './radio/pairing.mjs?v=11';
+import {Link} from './radio/link.mjs?v=11';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=11';
+import {RadioAudio} from './radio/audio.mjs?v=11';
+import {Scanner} from './radio/scanner.mjs?v=11';
 
 const $ = id => document.getElementById(id);
 async function openRearCamera(audio = false) {
@@ -29,17 +30,14 @@ function view(next) {
   for (const id of ['home', 'pair', 'radio']) $(id).hidden = id !== next;
   $('tools').hidden = next === 'home';
   $('tools').open = false;
-  $('showOffer').hidden = $('refreshOffer').hidden = true;
-  $('photo').hidden = $('retryCamera').hidden = next !== 'pair';
+  $('refreshOffer').hidden = next !== 'pair' || current?.host;
+  $('photo').hidden = $('retryCamera').hidden = next !== 'pair' || !current?.host;
   window.scrollTo(0, 0);
 }
 function hint(message) { $('pairHint').textContent = message; }
 function optics(mode, message = '') {
-  $('hostCard').hidden = mode !== 'offer';
-  $('replyQr').hidden = mode !== 'answer';
+  $('joinQr').hidden = mode !== 'offer';
   $('guide').hidden = mode !== 'scan';
-  $('showOffer').hidden = !current?.host || mode !== 'scan';
-  $('refreshOffer').hidden = !current?.host || (mode !== 'offer' && mode !== 'scan');
   $('preparing').hidden = mode !== 'wait';
   $('preparing').textContent = message;
 }
@@ -70,13 +68,13 @@ class Session {
   }
   async begin() {
     view('pair');
-    $('pairTitle').textContent = this.host ? 'Pair your group' : 'Scan host QR';
-    $('pairMeta').textContent = this.host ? 'Group ' + this.room.code : 'Rear camera';
+    $('pairTitle').textContent = this.host ? 'Scan guest QR' : 'Show your join QR';
+    $('pairMeta').textContent = this.host ? 'Group ' + this.room.code : 'Guest';
     $('retryCamera').textContent = 'Restart rear camera';
     $('go').hidden = !this.host;
     $('go').disabled = true;
-    optics('wait', 'Starting camera…');
-    hint('Allow camera and microphone access.');
+    optics('wait', this.host ? 'Starting rear camera…' : 'Preparing your QR…');
+    hint(this.host ? 'Allow camera and microphone access.' : 'Allow the microphone to receive the pairing sound.');
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
       throw Error('Open TrekTalk in Safari or Chrome using its HTTPS address.');
     }
@@ -84,7 +82,9 @@ class Session {
     this.ctx = new Context({latencyHint: 'interactive'});
     if (!this.ctx.audioWorklet) throw Error('This browser needs AudioWorklet support. Open TrekTalk in an up-to-date browser.');
     this.ctx.resume().catch(() => {});
-    const stream = await openRearCamera({channelCount: 1, echoCancellation: true, noiseSuppression: true});
+    const stream = this.host
+      ? await openRearCamera({channelCount: 1, echoCancellation: true, noiseSuppression: true})
+      : await navigator.mediaDevices.getUserMedia({video: false, audio: {channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false}});
     if (this.closed) { stream.getTracks().forEach(t => t.stop()); return; }
     this.stream = stream;
     this.audio = new RadioAudio(this.ctx, stream, frame => {
@@ -94,7 +94,8 @@ class Session {
     await this.audio.init();
     if (this.closed) return;
     this.ctx.onstatechange = () => this.renderAudioButton();
-    await this.scanner.start(stream.getVideoTracks()[0]);
+    this.renderAudioButton();
+    if (this.host) await this.scanner.start(stream.getVideoTracks()[0]);
     if (this.closed) return;
     this.leaseTimer = setInterval(() => {
       if (this.host) this.room.tick();
@@ -103,10 +104,9 @@ class Session {
     this.wake();
     if (this.host) {
       this.room.publish();
-      await this.invite();
+      this.scanGuests();
     } else {
-      optics('scan');
-      hint('Point your rear camera at the QR on the host phone.');
+      await this.makeGuestQR();
     }
   }
   async wake() {
@@ -117,7 +117,7 @@ class Session {
     } catch {}
   }
   async restartCamera() {
-    if (this.closed || page !== 'pair' || !this.audio || this.restarting) return;
+    if (!this.host || this.closed || page !== 'pair' || !this.audio || this.restarting) return;
     this.restarting = true;
     try {
       this.scanner.stop();
@@ -132,83 +132,29 @@ class Session {
     clearTimeout(attempt.timeout);
     if (this.pending === attempt) this.pending = null;
     if (this.guestAttempt === attempt) this.guestAttempt = null;
-    attempt.link.close();
+    attempt.link?.close();
   }
-  async invite() {
-    if (this.closed || !this.host || page !== 'pair') return;
-    this.drop(this.pending);
+  scanGuests(message) {
+    if (this.closed || page !== 'pair' || this.pending) return;
     if (this.room.members.size >= CAPACITY) {
       optics('wait', 'All 10 radios are paired.');
       hint('Your group is ready.');
       return;
     }
-    const attempt = {invite: newInvite(), phase: 'generating'};
-    const link = new Link({
-      host: true, ready: () => {}, control: msg => this.fromGuest(attempt, msg),
-      voice: frame => { if (attempt.id) this.room.frame(attempt.id, frame); },
-      lost: reason => this.hostLost(attempt, reason)
-    });
-    attempt.link = link;
-    this.pending = attempt;
-    optics('wait', 'Creating local QR…');
-    try {
-      const sdp = await link.offer();
-      if (this.closed || this.pending !== attempt) return;
-      drawCode($('hostQr'), pack('offer', attempt.invite, sdp));
-      attempt.phase = 'offer';
-      this.showInvitation();
-    } catch (e) {
-      if (this.pending !== attempt || this.closed) return;
-      this.drop(attempt);
-      optics('wait', 'Invitation unavailable');
-      hint(errorText(e));
-      $('retryCamera').textContent = 'Retry pairing';
-    }
-  }
-  showInvitation() {
-    if (this.pending?.phase !== 'offer') return;
-    $('pairTitle').textContent = 'Pair your group';
-    optics('offer');
-    hint('Let the guest scan this QR. When their reply appears, tap this QR to open your rear camera view.');
-  }
-  scanReply() {
-    if (this.pending?.phase !== 'offer') return;
-    $('pairTitle').textContent = 'Scan guest reply';
+    $('pairTitle').textContent = 'Scan guest QR';
     optics('scan');
-    hint('Point your rear camera at the reply QR on the guest phone.');
+    hint(message || 'Point the rear camera at a guest’s join QR. Keep the phone speaker on.');
   }
-  readQR(text, seconds) {
-    if (this.closed || page !== 'pair' || !this.audio) return;
-    if (text.startsWith('TT1:') || text.startsWith('TT3:')) {
-      hint('That QR is from an older version. Open TrekTalk v10 on both phones.');
-      return;
-    }
-    if (this.host) {
-      const a = this.pending;
-      if (!a || a.phase !== 'offer' || !text.startsWith('TK9A:' + a.invite + ':')) return;
-      const decoded = unpack(text);
-      if (!decoded) return;
-      a.readAt = performance.now();
-      a.phase = 'linking';
-      optics('wait', 'Connecting…');
-      hint('Reply read. Connecting over the hotspot…');
-      a.timeout = setTimeout(() => this.hostLost(a, 'Connection timed out. Check the hotspot and pair again.'), 20000);
-      a.link.accept(decoded.description).catch(e => this.hostLost(a, errorText(e)));
-    } else {
-      if (!text.startsWith('TK9O:') || this.guestAttempt?.welcomed) return;
-      if (this.guestAttempt && text.startsWith('TK9O:' + this.guestAttempt.invite + ':')) return;
-      const decoded = unpack(text);
-      if (!decoded) return;
-      this.answer(decoded, seconds);
-    }
-  }
-  async answer(decoded, seconds) {
+  async makeGuestQR() {
+    if (this.host || this.closed || page !== 'pair' || !this.audio) return;
     this.drop(this.guestAttempt);
-    const a = {invite: decoded.invite, readAt: performance.now(), scanSeconds: seconds};
+    const a = {invite: newInvite()};
+    this.guestAttempt = a;
+    optics('wait', 'Creating your join QR…');
     try {
       a.link = new Link({
-        host: false,
-        ready: () => a.link.send({op: 'hello', version: 9, name: this.name}),
+        initiator: true,
+        ready: () => a.link.send({op: 'hello', version: 11, name: this.name}),
         control: msg => {
           if (this.guestAttempt !== a || this.closed) return;
           if (msg.op === 'welcome' && msg.invite === a.invite) {
@@ -219,20 +165,64 @@ class Session {
         voice: frame => { if (this.guestAttempt === a) this.audio.play(frame); },
         lost: reason => this.guestLost(a, reason)
       });
-      this.guestAttempt = a;
-      optics('wait', 'Preparing reply…');
-      hint('The host will scan your reply.');
-      const sdp = await a.link.answer(decoded.description);
-      if (this.closed || this.guestAttempt !== a || page !== 'pair') return;
-      drawCode($('replyQr'), pack('answer', a.invite, sdp));
-      optics('answer');
-      $('pairTitle').textContent = 'Show this QR to the host';
-      hint('Let the host scan this reply with their rear camera. Talkie opens automatically.');
-      a.timeout = setTimeout(() => this.guestLost(a, 'The host did not confirm. Ask the host to refresh the invitation, then scan it again.'), 60000);
-    } catch (e) {
-      if (this.guestAttempt === a) this.guestLost(a, errorText(e));
-      else if (!this.closed && !this.guestAttempt) hint(errorText(e));
-    }
+      a.offer = await a.link.offer();
+      if (this.closed || this.guestAttempt !== a) return;
+      drawCode($('joinQr'), pack('offer', a.invite, a.offer));
+      this.audio.pairing(new ToneReader(packet => this.heardAnswer(a, packet)));
+      optics('offer');
+      hint('Show this code to the host. Keep the phones close while the host plays the pairing sound.');
+    } catch (e) { this.guestLost(a, errorText(e)); }
+  }
+  async heardAnswer(a, packet) {
+    if (this.closed || this.guestAttempt !== a || a.accepting) return;
+    const description = await openAnswer(a.invite, a.offer, packet);
+    if (!description || this.closed || this.guestAttempt !== a || a.accepting) return;
+    a.accepting = true;
+    a.readAt = performance.now();
+    this.audio.pairing(null);
+    optics('wait', 'Connecting…');
+    hint('Pairing sound received. Connecting over the hotspot…');
+    a.timeout = setTimeout(() => this.guestLost(a, 'Connection timed out. Check the hotspot, then refresh your join QR in Options.'), 18000);
+    try { await a.link.accept(description); }
+    catch (e) { this.guestLost(a, errorText(e)); }
+  }
+  readQR(text) {
+    if (!this.host || this.closed || page !== 'pair' || !this.audio || this.pending || this.room.members.size >= CAPACITY) return;
+    if (/^(?:TK9|TT[13]:)/.test(text)) { hint('Open TrekTalk v11 on both phones. The guest must show their join QR.'); return; }
+    const decoded = unpack(text);
+    if (!decoded || decoded.description.type !== 'offer' || this.lastFailed === decoded.invite) return;
+    for (const link of this.connections.values()) if (link.invite === decoded.invite) return;
+    this.connectGuest(decoded);
+  }
+  async connectGuest({invite, description}) {
+    const a = {invite, phase: 'linking', readAt: performance.now()};
+    this.pending = a;
+    optics('wait', 'QR read');
+    hint('Keep the phones close. Sending the pairing sound from this phone’s speaker.');
+    try {
+      a.link = new Link({
+        initiator: false, ready: () => {}, control: msg => this.fromGuest(a, msg),
+        voice: frame => { if (a.id) this.room.frame(a.id, frame); },
+        lost: reason => this.hostLost(a, reason)
+      });
+      a.link.invite = invite;
+      const sdp = await a.link.answer(description);
+      const bytes = await sealAnswer(invite, description.sdp, sdp);
+      if (this.closed || this.pending !== a) return;
+      const tone = renderTone(bytes);
+      let tries = 0;
+      const play = () => {
+        if (this.closed || this.pending !== a) return;
+        if (tries >= 3) {
+          this.hostLost(a, 'No reply. Check speaker volume and hotspot access. Ask the guest to refresh their join QR.');
+          return;
+        }
+        tries++;
+        const seconds = this.audio.playTone(tone);
+        a.timeout = setTimeout(play, seconds * 1000 + 2400);
+      };
+      play();
+    } catch (e) { this.hostLost(a, errorText(e)); }
   }
   fromGuest(a, msg) {
     if (this.closed) return;
@@ -243,19 +233,20 @@ class Session {
       return;
     }
     if (this.pending !== a || a.phase !== 'linking') return;
-    if (msg.op === 'hello' && msg.version === 9) {
+    if (msg.op === 'hello' && msg.version === 11) {
       a.name = displayName(msg.name, 'Hiker');
       a.link.send({op: 'welcome', invite: a.invite});
     }
     if (msg.op === 'here' && a.name) {
       clearTimeout(a.timeout);
-      $('pairTiming').textContent = 'Last guest connected ' + ((performance.now() - a.readAt) / 1000).toFixed(1) + ' s after reading their reply.';
+      $('pairTiming').textContent = 'Last guest connected ' + ((performance.now() - a.readAt) / 1000).toFixed(1) + ' s after scanning their QR.';
       $('pairTiming').hidden = false;
+      this.audio.stopTone();
       a.id = this.room.add(a.name);
       this.connections.set(a.id, a.link);
       this.pending = null;
       this.room.publish();
-      if (page === 'pair') this.invite();
+      if (page === 'pair') this.scanGuests();
     }
   }
   hostLost(a, reason) {
@@ -265,23 +256,29 @@ class Session {
       this.connections.delete(a.id);
       this.drop(a);
       this.room.remove(a.id);
-      if (page === 'pair' && !this.pending) this.invite();
+      if (page === 'pair' && !this.pending) this.scanGuests();
     } else if (this.pending === a) {
       this.drop(a);
-      if (page === 'pair') { hint(reason); this.invite(); }
+      this.audio.stopTone();
+      this.lastFailed = a.invite;
+      if (page === 'pair') this.scanGuests(reason);
     }
   }
   guestLost(a, reason) {
     if (this.closed || this.guestAttempt !== a) return;
     this.drop(a);
     if (page === 'radio') { end(reason + ' Ask the host to open pairing.'); return; }
-    optics('scan');
-    $('pairTitle').textContent = 'Scan host QR';
-    hint(reason);
+    this.audio?.pairing(null);
+    optics('wait', 'Pairing paused');
+    hint(reason + ' Use Options to refresh your QR.');
   }
   enterRadio() {
     view('radio');
     this.scanner.stop();
+    if (!this.host) {
+      this.audio.pairing(null);
+      this.audio.track.applyConstraints({echoCancellation:true, noiseSuppression:true}).catch(() => {});
+    }
     $('add').hidden = !this.host || this.roster?.people.length >= CAPACITY;
     this.renderAudioButton();
     this.paintTargets();
@@ -302,7 +299,7 @@ class Session {
     $('pairTitle').textContent = 'Pair another phone';
     optics('wait', 'Starting rear camera…');
     await this.restartCamera();
-    if (!this.closed && page === 'pair' && this.pending?.phase !== 'linking') await this.invite();
+    this.scanGuests();
   }
   receive(msg) {
     if (this.closed) return;
@@ -316,8 +313,7 @@ class Session {
       } else if (page === 'pair') {
         clearTimeout(this.guestAttempt.timeout);
         const a = this.guestAttempt;
-        const read = a.scanSeconds ? 'QR read ' + a.scanSeconds.toFixed(1) + ' s after camera start. ' : '';
-        $('pairTiming').textContent = read + 'Connected ' + ((performance.now() - a.readAt) / 1000).toFixed(1) + ' s after reading the offer.';
+        $('pairTiming').textContent = 'Connected ' + ((performance.now() - a.readAt) / 1000).toFixed(1) + ' s after receiving the pairing sound.';
         $('pairTiming').hidden = false;
         this.enterRadio();
       }
@@ -421,6 +417,7 @@ class Session {
   }
   renderAudioButton() {
     $('resume').hidden = page !== 'radio' || this.ctx.state === 'running';
+    $('pairAudio').hidden = page !== 'pair' || this.ctx.state === 'running';
   }
   close() {
     if (this.closed) return;
@@ -461,20 +458,16 @@ try { $('name').value = localStorage.getItem('trektalk-name') || ''; } catch {}
 $('host').onclick = () => start(true);
 $('guest').onclick = () => start(false);
 $('go').onclick = () => current?.go();
-$('hostCard').onclick = () => current?.scanReply();
-$('showOffer').onclick = () => { $('tools').open = false; current?.showInvitation(); };
-$('refreshOffer').onclick = () => {
-  $('tools').open = false;
-  if (current?.pending?.phase === 'offer') current.invite();
-};
+$('refreshOffer').onclick = () => { $('tools').open = false; current?.makeGuestQR(); };
 $('leave').onclick = () => end();
 $('add').onclick = () => current?.addPhone().catch(e => hint(errorText(e)));
+$('pairAudio').onclick = () => current?.ctx.resume().catch(e => hint(errorText(e)));
 $('resume').onclick = () => current?.ctx.resume().catch(e => { $('channelLabel').textContent = errorText(e); });
 $('retryCamera').onclick = async () => {
   $('tools').open = false;
   const s = current;
   if (!s) return;
-  try { await s.restartCamera(); if (s.host && !s.pending) await s.invite(); }
+  try { await s.restartCamera(); s.lastFailed = null; s.scanGuests(); }
   catch (e) { hint(errorText(e)); }
 };
 $('photo').onclick = () => { $('tools').open = false; $('photoFile').click(); };
@@ -487,9 +480,9 @@ $('photoFile').onchange = async () => {
     const text = await s.scanner.photo(file);
     if (s !== current || page !== 'pair') return;
     const code = unpack(text);
-    if (!code || code.description.type !== (s.host ? 'answer' : 'offer') || (s.host && code.invite !== s.pending?.invite)) {
+    if (!code || !s.host || code.description.type !== 'offer') {
       hint('This is not the current partner QR. Use the code on the other phone.');
-    } else s.readQR(text, 0);
+    } else s.readQR(text);
   } catch (e) { if (s === current) hint(errorText(e)); }
 };
 
@@ -521,8 +514,8 @@ async function prepareOffline() {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
   const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
   const markReady = async () => {
-    const hit = await caches.match(new URL('./__trektalk_ready_v10__', location.href).href, {cacheName: 'trektalk-v10'});
-    if (hit) $('offline').textContent = 'Ready offline · v10';
+    const hit = await caches.match(new URL('./__trektalk_ready_v11__', location.href).href, {cacheName: 'trektalk-v11'});
+    if (hit) $('offline').textContent = 'Ready offline · v11';
     return Boolean(hit);
   };
   if (await markReady()) return;
