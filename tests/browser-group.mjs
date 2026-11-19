@@ -48,6 +48,14 @@ try{
           this.srcObject.getAudioTracks().length)forbid('media playback');
       return originalPlay.apply(this,args);
     };
+    const fetch = window.fetch.bind(window);
+    window.fetch = (resource, init) => {
+      if (window.interruptWrite && init?.body && JSON.parse(init.body).op === 'write') {
+        window.interruptWrite = false;
+        return Promise.resolve(new Response(null, {status:503}));
+      }
+      return fetch(resource, init);
+    };
     const rtc=RTCPeerConnection;
     window.peerReports=[];
     window.RTCPeerConnection=class extends rtc{
@@ -79,14 +87,14 @@ try{
     await ctx.addInitScript(installMediaFixtures);
     const p=await ctx.newPage();
     p.on('pageerror',e=>console.log('PAGE ERROR',name,e.message));p.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',name,m.text());});
-    await p.goto(site);await p.getByText('Ready offline · v14').waitFor({timeout:10000});await p.fill('#name',name);return p;
+    await p.goto(site);await p.getByText('Ready offline · v15').waitFor({timeout:10000});await p.fill('#name',name);return p;
   }
   const host=await phone('OnePlus'),iphone=await phone('iPhone'),third=await phone('Arun');
   pages.push(host,iphone,third);
   const more=[];
   for(let i=4;i<=10;i++) more.push(await phone('Hiker '+i));
   online=false;
-  await iphone.reload();await iphone.getByText('Ready offline · v14').waitFor();await iphone.fill('#name','');
+  await iphone.reload();await iphone.getByText('Ready offline · v15').waitFor();await iphone.fill('#name','');
   await host.evaluate(()=>{window.isTestHost=true;});
   await host.click('#host');
   assert.equal(await host.evaluate(()=>window.cameraRequests),0);
@@ -105,7 +113,19 @@ try{
     assert.equal(await host.evaluate(()=>window.cameraRequests),0);
     assert.match(await guest.locator('#channelLabel').innerText(),started ? /Ready/ : /Waiting for the host/);
   }
-  await pair(iphone);await pair(third);
+  // A host-side setup failure should reach the guest before the 35 second join timeout.
+  await host.evaluate(() => { window.failNextAnswer = true; });
+  await iphone.click('#guest');
+  await point(iphone, await imageOf(host, '#joinQr'));
+  await iphone.getByText(/The host could not connect/).waitFor({timeout:12000});
+  assert.equal(await iphone.evaluate(() => window.peerReports.every(pc => pc.connectionState === 'closed')), true);
+  await iphone.locator('#tools summary').click();
+  await iphone.click('#leave');
+  await iphone.evaluate(() => { window.interruptWrite = true; });
+  await pair(iphone);
+  assert.equal(await iphone.evaluate(() => window.interruptWrite), false);
+  assert.equal(await iphone.evaluate(() => window.cameraRequests), 2);
+  await pair(third);
   assert.match(await host.locator('#pairMeta').innerText(),/2 paired/);
   await host.click('#go');
   for(const p of pages){await p.getByText('Ready',{exact:true}).waitFor();assert.equal(await p.locator('#targets button').count(),3);}
@@ -151,7 +171,7 @@ try{
   await third.getByText('Signal from iPhone',{exact:true}).waitFor();
   await key(third,'Signal OnePlus','keydown');
   assert.match(await third.locator('#channelLabel').innerText(),/Signal from iPhone/);
-  // Losing focus must release the active microphone and the shared channel.
+  // Losing focus must release the shared channel.
   await iphone.evaluate(()=>window.dispatchEvent(new Event('blur')));
   await Promise.all(pages.map(p=>p.getByText('Ready',{exact:true}).waitFor()));
   for(const p of pages){

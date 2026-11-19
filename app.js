@@ -1,8 +1,8 @@
-import {roomNumber, drawCode} from './radio/pairing.mjs?v=14';
-import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=14';
-import {Link} from './radio/link.mjs?v=14';
-import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=14';
-import {Scanner} from './radio/scanner.mjs?v=14';
+import {roomNumber, drawCode} from './radio/pairing.mjs?v=15';
+import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=15';
+import {Link} from './radio/link.mjs?v=15';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=15';
+import {Scanner} from './radio/scanner.mjs?v=15';
 
 const $ = id => document.getElementById(id);
 async function openRearCamera() {
@@ -161,6 +161,9 @@ class Session {
       try {
         const message = await inbox.read();
         if (this.closed || page !== 'pair' || this.group !== group) return;
+        for (const [id, record] of this.attempts) {
+          if (record.expires <= performance.now()) this.attempts.delete(id);
+        }
         if (message && /^[a-f0-9]{32}$/.test(message.id) && !this.attempts.has(message.id)) {
           this.connectGuest(group, message);
         }
@@ -175,17 +178,20 @@ class Session {
   readQR(text) {
     if (this.host || this.closed || page !== 'pair' || this.guestAttempt) return;
     const match=/^TREK14:([0-9A-F]{32})$/.exec(text);
-    if (!match) { hint('Scan a v14 group QR from the host phone.'); return; }
+    if (!match) { hint('Scan the TrekTalk group QR on the host phone.'); return; }
     this.joinGroup(match[1].toLowerCase());
   }
   async joinGroup(group) {
     const a={invite:newId(), readAt:performance.now()};
     this.guestAttempt=a;
+    this.scanner.stop();
+    $('retryCamera').hidden = $('photo').hidden = true;
     optics('wait','QR scanned');
     hint('Connecting to the host over the network…');
     try {
       const inbox=await mailbox(group,'join',this.serviceURL,this.abort.signal);
       const reply=await mailbox(group,a.invite,this.serviceURL,this.abort.signal);
+      if (this.closed || this.guestAttempt !== a) return;
       a.link=new Link({
         initiator:true,
         ready:()=>a.link.send({op:'hello',version:14,name:this.name}),
@@ -226,7 +232,7 @@ class Session {
   showScan(invite, guest) {
     const key = guest?.tag || invite;
     let entry = this.scans.get(key);
-    if (!entry || entry.connected) {
+    if (!entry || entry.row.dataset.state !== 'ended') {
       const row = document.createElement('li');
       const name = document.createElement('strong');
       const device = document.createElement('small');
@@ -250,12 +256,18 @@ class Session {
     if (typeof sdp !== "string" || sdp.length > 16000 || !guest || typeof guest.name !== "string") return;
     const a = {invite, phase: 'linking', readAt: performance.now()};
     this.attempts.set(invite,a);
+    const reserved = [...this.attempts.values()].filter(p => p.phase === 'linking').length;
+    const full = this.connections.size + reserved >= CAPACITY;
+    if (full) a.phase = 'rejected';
     try {
       const reply=await mailbox(group,invite,this.serviceURL,this.abort.signal);
       if(this.closed)return;
-      if(this.connections.size + [...this.attempts.values()].filter(p=>p.phase==='linking').length >= CAPACITY){
-        a.phase='rejected'; await reply.send({error:'This group is full.'});return;
+      if (full) {
+        this.retire(a);
+        await reply.send({error:'This group is full.'});
+        return;
       }
+      a.reply = reply;
       a.entry = this.showScan(invite, guest);
       a.link = new Link({
         initiator: false, ready: () => {}, control: msg => this.fromGuest(a, msg),
@@ -293,14 +305,19 @@ class Session {
       a.entry.row.dataset.state = 'connected';
       this.connections.set(a.id, a.link);
       this.room.publish();
-      if (page === 'pair' && this.room.members.size >= CAPACITY) { clearTimeout(this.pollTimer); optics('wait','All 10 radios are paired.'); }
+      if (page === 'pair' && this.room.members.size >= CAPACITY) optics('wait','All 10 radios are paired.');
     }
+  }
+  retire(a) {
+    // Ignore duplicate delivery until the mailbox's 90 second retention period ends.
+    this.attempts.set(a.invite, {phase:'ended', expires:performance.now() + 95000});
   }
   hostLost(a, reason) {
     if (this.closed) return;
     if (a.id) {
       if (this.connections.get(a.id) !== a.link) return;
       this.connections.delete(a.id);
+      this.retire(a);
       a.entry.connected = false;
       a.entry.state.textContent = 'Disconnected';
       a.entry.row.dataset.state = 'ended';
@@ -309,6 +326,8 @@ class Session {
       if (page === 'pair' && this.room.members.size===CAPACITY-1) this.showGroup();
     } else if (a.phase==='linking') {
       a.phase='failed';
+      this.retire(a);
+      a.reply?.send({error:'The host could not connect. Check that both phones are on the same hotspot, then scan again.'}).catch(() => {});
       if(a.entry){a.entry.state.textContent=reason;a.entry.row.dataset.state='ended';}
       this.drop(a);
     }
@@ -319,6 +338,7 @@ class Session {
     if (page === 'radio') { end(reason); return; }
     // Wait for a deliberate retry rather than re-reading the same QR every frame.
     this.scanner.stop();
+    $('retryCamera').hidden = $('photo').hidden = false;
     optics('wait', 'Could not join');
     hint(reason + ' Use Options to restart the scanner.');
   }
@@ -329,7 +349,7 @@ class Session {
     this.paintTargets();
   }
   go() {
-    if (!this.host || this.room.members.size < 2 || page !== 'pair') return;
+    if (!this.host || (!this.room.started && this.room.members.size < 2) || page !== 'pair') return;
     clearTimeout(this.pollTimer);
     this.enterRadio();
     this.room.start();
@@ -349,7 +369,7 @@ class Session {
       if (!Array.isArray(msg.people) || msg.people.length > CAPACITY || !msg.people.some(p => p.id === msg.self)) return;
       this.roster = msg;
       if (this.host) {
-        $('go').disabled = msg.people.length < 2;
+        $('go').disabled = !msg.started && msg.people.length < 2;
         $('pairMeta').textContent = 'Group ' + msg.code + ' · ' + (msg.people.length - 1) + ' paired';
       } else if (page === 'pair') {
         clearTimeout(this.guestAttempt.timeout);
@@ -368,6 +388,9 @@ class Session {
       return;
     }
     if (msg.op !== 'floor') return;
+    if (this.radioState.mode === 'tx' && msg.mode !== 'tx' && this.held?.press === this.radioState.press) {
+      this.held = null;
+    }
     this.radioState = msg;
     if (msg.mode === 'tx' && (this.held?.press !== msg.press || this.held?.target !== msg.target || page !== 'radio' || document.hidden)) {
       this.command({op: 'release', press: msg.press});
@@ -453,7 +476,8 @@ class Session {
     this.abort.abort();
     clearTimeout(this.pollTimer);
     clearInterval(this.leaseTimer);
-    for (const a of this.attempts.values()) if (!a.id) this.drop(a);
+    for (const a of this.attempts.values()) if (a.phase === 'linking') this.drop(a);
+    this.attempts.clear();
     if (this.host) {
       for (const link of this.connections.values()) { link.send({op: 'ended'}); link.close(); }
       this.connections.clear();
@@ -493,8 +517,13 @@ $('retryCamera').onclick = async () => {
   $('tools').open = false;
   const s = current;
   if (!s) return;
-  try { await s.restartCamera(); optics('scan'); hint('Scan the host group QR.'); }
-  catch (e) { hint(errorText(e)); }
+  try {
+    await s.restartCamera();
+    if (s === current && page === 'pair' && !s.guestAttempt) {
+      optics('scan');
+      hint('Scan the host group QR.');
+    }
+  } catch (e) { if (s === current) hint(errorText(e)); }
 };
 $('photo').onclick = () => { $('tools').open = false; $('photoFile').click(); };
 $('photoFile').onchange = async () => {
@@ -537,8 +566,8 @@ async function prepareOffline() {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
   const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
   const markReady = async () => {
-    const hit = await caches.match(new URL('./__trektalk_ready_v14__', location.href).href, {cacheName: 'trektalk-v14'});
-    if (hit) $('offline').textContent = 'Ready offline · v14';
+    const hit = await caches.match(new URL('./__trektalk_ready_v15__', location.href).href, {cacheName: 'trektalk-v15'});
+    if (hit) $('offline').textContent = 'Ready offline · v15';
     return Boolean(hit);
   };
   if (await markReady()) return;

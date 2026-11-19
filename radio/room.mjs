@@ -60,6 +60,7 @@ export class Room {
   broadcastFloor() { for (const id of this.members.keys()) this.sendFloor(id); }
   input(id, message) {
     if (!this.members.has(id) || !Number.isSafeInteger(message.press) || message.press < 1) return;
+    this.tick();
     if (message.op === 'ask') {
       const target = message.target;
       if (!this.started || this.members.size < 2 || target === id || (target !== ALL && !this.members.has(target)) || this.floor) {

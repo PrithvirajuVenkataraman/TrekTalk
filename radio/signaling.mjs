@@ -14,18 +14,32 @@ export async function mailbox(secret, name, url, signal) {
   const box=hex(new Uint8Array(await crypto.subtle.digest('SHA-256',utf8.encode(secret+'/'+name))));
   const aad=utf8.encode(box);
   async function request(body) {
-    const controller=new AbortController();
-    const abort=()=>controller.abort();
-    if(signal.aborted)abort();
-    signal.addEventListener('abort',abort,{once:true});
-    const timer=setTimeout(abort,5500);
-    try {
-      const response=await fetch(url,{method:'POST',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,box}),signal:controller.signal});
-      if(!response.ok)throw Error();
-      return await response.json();
-    } catch {throw Error('Pairing service unreachable. Check the internet connection or the local service in Pairing settings.');}
-    finally{clearTimeout(timer);signal.removeEventListener('abort',abort);}
+    const payload = JSON.stringify({...body, box});
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (signal.aborted) throw Error('Pairing ended.');
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      signal.addEventListener('abort', abort, {once:true});
+      const timer = setTimeout(abort, 5500);
+      let retryable = true;
+      try {
+        const response = await fetch(url, {
+          method:'POST', credentials:'omit', cache:'no-store', referrerPolicy:'no-referrer',
+          headers:{'Content-Type':'application/json'}, body:payload, signal:controller.signal
+        });
+        retryable = response.status === 408 || response.status >= 500;
+        if (!response.ok) throw Error('The pairing service returned HTTP ' + response.status + '. Check Pairing settings.');
+        return await response.json();
+      } catch (error) {
+        if (signal.aborted) throw Error('Pairing ended.');
+        if (!retryable) throw error;
+        if (attempt === 1) throw Error('Pairing service unreachable. Check the internet connection or the local service in Pairing settings.');
+      } finally {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', abort);
+      }
+      await new Promise(resolve => setTimeout(resolve, 400));
+    }
   }
   return {
     async send(message) {

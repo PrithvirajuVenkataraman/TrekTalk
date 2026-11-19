@@ -30,3 +30,20 @@ test('one shared channel with ten parties, private and group visual signals, con
   ask(a,HOST,4);room.remove(a);assert.equal(room.floor,null);
   ask(b,other[0],2);room.remove(other[0]);assert.equal(room.floor,null);
 });
+
+test('a delayed keep cannot revive an expired signal before the next timer tick', async () => {
+  const {Room, HOST, ALL} = await import('../radio/room.mjs');
+  let clock = 0;
+  const room = new Room({name:'Host', code:'012345', now:()=>clock, deliver:()=>{}});
+  const guest = room.add('Guest');
+  room.start();
+  room.input(HOST, {op:'ask', target:ALL, press:1});
+  clock = 3600;
+  room.input(HOST, {op:'keep', press:1});
+  assert.equal(room.floor, null);
+  room.input(guest, {op:'ask', target:HOST, press:1});
+  assert.equal(room.floor.speaker, guest);
+  clock = 7200;
+  room.input(HOST, {op:'ask', target:ALL, press:2});
+  assert.equal(room.floor.speaker, HOST);
+});

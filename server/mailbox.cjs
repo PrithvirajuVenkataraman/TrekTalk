@@ -1,7 +1,7 @@
 // The mailbox holds only encrypted signaling messages, for at most 90 seconds.
 const TTL = 90;
 async function exchange(store, body) {
-  if (!body || !/^[a-f0-9]{64}$/.test(String(body.box)) || !['read','write'].includes(body.op)) return [400, {}];
+  if (!body || typeof body.box !== 'string' || !/^[a-f0-9]{64}$/.test(body.box) || !['read','write'].includes(body.op)) return [400, {}];
   const key = 'trektalk-v13-' + body.box;
   if (body.op === 'write') {
     if (typeof body.packet !== 'string' || body.packet.length < 32 || body.packet.length > 28000 ||
