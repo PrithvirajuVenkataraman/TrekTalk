@@ -56,6 +56,14 @@ try{
       }
       return fetch(resource, init);
     };
+    const send = RTCDataChannel.prototype.send;
+    RTCDataChannel.prototype.send = function(data) {
+      if (window.delayRelease && JSON.parse(data).op === 'release') {
+        window.sendRelease = () => { window.delayRelease = false; send.call(this, data); };
+        return;
+      }
+      return send.call(this, data);
+    };
     const rtc=RTCPeerConnection;
     window.peerReports=[];
     window.RTCPeerConnection=class extends rtc{
@@ -87,14 +95,14 @@ try{
     await ctx.addInitScript(installMediaFixtures);
     const p=await ctx.newPage();
     p.on('pageerror',e=>console.log('PAGE ERROR',name,e.message));p.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',name,m.text());});
-    await p.goto(site);await p.getByText('Ready offline · v15').waitFor({timeout:10000});await p.fill('#name',name);return p;
+    await p.goto(site);await p.getByText('Ready offline · v15.1').waitFor({timeout:10000});await p.fill('#name',name);return p;
   }
   const host=await phone('OnePlus'),iphone=await phone('iPhone'),third=await phone('Arun');
   pages.push(host,iphone,third);
   const more=[];
   for(let i=4;i<=10;i++) more.push(await phone('Hiker '+i));
   online=false;
-  await iphone.reload();await iphone.getByText('Ready offline · v15').waitFor();await iphone.fill('#name','');
+  await iphone.reload();await iphone.getByText('Ready offline · v15.1').waitFor();await iphone.fill('#name','');
   await host.evaluate(()=>{window.isTestHost=true;});
   await host.click('#host');
   assert.equal(await host.evaluate(()=>window.cameraRequests),0);
@@ -172,7 +180,12 @@ try{
   await key(third,'Signal OnePlus','keydown');
   assert.match(await third.locator('#channelLabel').innerText(),/Signal from iPhone/);
   // Losing focus must release the shared channel.
-  await iphone.evaluate(()=>window.dispatchEvent(new Event('blur')));
+  await iphone.evaluate(() => {
+    window.delayRelease = true;
+    window.dispatchEvent(new Event('blur'));
+  });
+  await iphone.getByText('Releasing channel…', {exact:true}).waitFor({timeout:2000});
+  await iphone.evaluate(() => window.sendRelease());
   await Promise.all(pages.map(p=>p.getByText('Ready',{exact:true}).waitFor()));
   for(const p of pages){
     const result=await p.evaluate(()=>({

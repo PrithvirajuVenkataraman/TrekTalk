@@ -1,8 +1,8 @@
-import {roomNumber, drawCode} from './radio/pairing.mjs?v=15';
-import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=15';
-import {Link} from './radio/link.mjs?v=15';
-import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=15';
-import {Scanner} from './radio/scanner.mjs?v=15';
+import {roomNumber, drawCode} from './radio/pairing.mjs?v=15.1';
+import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=15.1';
+import {Link} from './radio/link.mjs?v=15.1';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=15.1';
+import {Scanner} from './radio/scanner.mjs?v=15.1';
 
 const $ = id => document.getElementById(id);
 async function openRearCamera() {
@@ -394,6 +394,7 @@ class Session {
     this.radioState = msg;
     if (msg.mode === 'tx' && (this.held?.press !== msg.press || this.held?.target !== msg.target || page !== 'radio' || document.hidden)) {
       this.command({op: 'release', press: msg.press});
+      this.paintFloor();
       return;
     }
     this.paintFloor();
@@ -437,7 +438,7 @@ class Session {
     let label = 'Ready';
     if (!this.roster.started) label = 'Paired. Waiting for the host to open the group.';
     else if (this.roster.people.length < 2) label = 'Waiting for another person.';
-    else if (mode === 'tx' && this.held) label = 'Signaling · release to stop';
+    else if (mode === 'tx') label = this.held ? 'Signaling · release to stop' : 'Releasing channel…';
     else if (mode === 'rx') label = 'Signal from ' + name;
     else if (mode === 'busy') label = 'Channel busy';
     else if (this.held) label = 'Requesting channel…';
@@ -566,8 +567,8 @@ async function prepareOffline() {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
   const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
   const markReady = async () => {
-    const hit = await caches.match(new URL('./__trektalk_ready_v15__', location.href).href, {cacheName: 'trektalk-v15'});
-    if (hit) $('offline').textContent = 'Ready offline · v15';
+    const hit = await caches.match(new URL('./__trektalk_ready_v15.1__', location.href).href, {cacheName: 'trektalk-v15.1'});
+    if (hit) $('offline').textContent = 'Ready offline · v15.1';
     return Boolean(hit);
   };
   if (await markReady()) return;

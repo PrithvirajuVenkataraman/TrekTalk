@@ -4,7 +4,7 @@ TrekTalk connects up to ten phones on the same Wi-Fi network. A participant can 
 
 ## Join
 
-1. Open TrekTalk v15 on each phone before the trek. Wait for **Ready offline · v15** and connect all phones to the same Wi-Fi or hotspot.
+1. Open TrekTalk v15.1 on each phone before the trek. Wait for **Ready offline · v15.1** and connect all phones to the same Wi-Fi or hotspot.
 2. Tap **Host a group** to create a fresh group QR. Keep the QR visible while people join.
 3. Each guest taps **Scan a QR code** and scans the host QR once with the rear camera. The host sees their name and connection status below the QR. Guests enter the group automatically.
 4. Tap **Open group** on the host. Hold **Signal everyone** or an individual person’s button. The selected phones display the sender’s name until release. Keep TrekTalk in the foreground.
