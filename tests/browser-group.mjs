@@ -23,6 +23,7 @@ const site='http://127.0.0.1:'+server.address().port;
 const browser=await pw.launch({executablePath:process.env.TREKTALK_CHROME || '/usr/bin/google-chrome',args:['--no-sandbox','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--allow-loopback-in-peer-connection','--autoplay-policy=no-user-gesture-required','--disable-background-timer-throttling']});
 const pages=[];
 let nearbyGuest;
+let missNextTone=false;
 try{
   function installMediaFixtures(){
     window.heard=0;window.cameraPicture=null;window.cameraRequests=0;
@@ -82,6 +83,7 @@ try{
     await ctx.grantPermissions(['microphone','camera']);
     await ctx.addInitScript(installMediaFixtures);
     await ctx.exposeBinding('emitSpeaker',async(_source,encoded)=>{
+      if(missNextTone){missNextTone=false;return;}
       if(nearbyGuest)await nearbyGuest.evaluate(data=>window.hearSpeaker(data),encoded);
     });
     const p=await ctx.newPage();
@@ -113,7 +115,12 @@ try{
     const offer=await imageOf(guest,'#joinQr');
     assert.equal(await guest.evaluate(()=>window.cameraRequests),0);
     await host.locator('#guide').waitFor({state:'visible'});
+    // Miss the first tone once. Move the QR out of view after the host reads it.
+    // Reconnection must finish over sound alone without another camera scan.
+    missNextTone=started && guest===third;
     const start=Date.now();await point(host,offer);
+    await host.getByText('QR read',{exact:true}).waitFor();
+    await host.evaluate(()=>{window.cameraPicture=null;});
     await guest.locator('#radio').waitFor({state:'visible',timeout:35000});
     console.log('One host scan, acoustic reply, guest entered Talkie in ms',Date.now()-start);
     assert.equal(await guest.evaluate(()=>window.cameraRequests),0);

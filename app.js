@@ -42,7 +42,7 @@ function optics(mode, message = '') {
   $('preparing').textContent = message;
 }
 function errorText(error) {
-  if (error?.name === 'NotAllowedError') return 'Allow camera and microphone access in your browser, then try again.';
+  if (error?.name === 'NotAllowedError') return current?.host ? 'Allow rear camera and microphone access, then try again.' : 'Allow microphone access, then show your join QR again.';
   if (error?.name === 'NotReadableError') return 'Camera or microphone is in use. Close the other camera app and try again.';
   if (error?.name === 'OverconstrainedError' && (!error.constraint || error.constraint === 'facingMode')) return 'Rear camera unavailable. Check that your browser can use the rear camera.';
   return error?.message || 'The phone could not complete this step.';
