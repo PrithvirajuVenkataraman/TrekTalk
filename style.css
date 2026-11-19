@@ -46,7 +46,6 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid
 .targets .key{font-size:11px;letter-spacing:1.1px;opacity:.8}
 .targets button[aria-disabled=true]:not(.held){opacity:.52}
 .plain{display:block;background:none;border:0;color:#c4deca;margin:16px auto}
-#resume{width:100%;margin-top:12px}
 @media(max-height:660px){header{min-height:45px;padding:6px 0}#pair{padding-top:9px}#pairHint{min-height:0;margin:5px auto 8px}.optics{width:min(100%,55svh)}#go{margin-top:8px}}
 .menu p{margin:6px 9px 9px;font-size:12px;line-height:1.4}
 

@@ -1,18 +1,17 @@
-import {roomNumber, drawCode} from './radio/pairing.mjs?v=13';
-import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=13';
-import {Link} from './radio/link.mjs?v=13';
-import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=13';
-import {RadioAudio} from './radio/audio.mjs?v=13';
-import {Scanner} from './radio/scanner.mjs?v=13';
+import {roomNumber, drawCode} from './radio/pairing.mjs?v=14';
+import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=14';
+import {Link} from './radio/link.mjs?v=14';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=14';
+import {Scanner} from './radio/scanner.mjs?v=14';
 
 const $ = id => document.getElementById(id);
-async function openRearCamera(audio = false) {
+async function openRearCamera() {
   if (!navigator.mediaDevices.getSupportedConstraints().facingMode) {
     throw Error('This browser cannot select a rear camera. Open TrekTalk in Safari or Chrome on your phone.');
   }
   const stream = await navigator.mediaDevices.getUserMedia({
     video: {facingMode: {exact: 'environment'}, width: {ideal: 1280}, height: {ideal: 960}},
-    audio
+    audio: false
   });
   const track = stream.getVideoTracks()[0];
   const facing = track?.getSettings().facingMode;
@@ -58,8 +57,8 @@ function optics(mode, message = '') {
   $('preparing').textContent = message;
 }
 function errorText(error) {
-  if (error?.name === 'NotAllowedError') return current?.host ? 'Allow microphone access for the radio.' : 'Allow rear camera and microphone access, then try again.';
-  if (error?.name === 'NotReadableError') return 'Camera or microphone is in use. Close the other camera app and try again.';
+  if (error?.name === 'NotAllowedError') return 'Allow rear camera access to scan the group QR.';
+  if (error?.name === 'NotReadableError') return 'The camera is in use. Close the other camera app and try again.';
   if (error?.name === 'OverconstrainedError' && (!error.constraint || error.constraint === 'facingMode')) return 'Rear camera unavailable. Check that your browser can use the rear camera.';
   return error?.message || 'The phone could not complete this step.';
 }
@@ -84,7 +83,6 @@ class Session {
       this.room = new Room({
         name, code: roomNumber(),
         deliver: (id, msg) => id === HOST ? this.receive(msg) : this.connections.get(id)?.send(msg),
-        audio: (id, frame) => id === HOST ? this.audio?.play(frame) : this.connections.get(id)?.sendVoice(frame)
       });
     }
   }
@@ -97,28 +95,17 @@ class Session {
     $('go').hidden = !this.host;
     $('go').disabled = true;
     optics('wait', this.host ? 'Creating group QR…' : 'Starting rear camera…');
-    hint(this.host ? 'Allow microphone access for the radio.' : 'Allow the rear camera to scan the group QR.');
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
+    hint(this.host ? 'Preparing your group QR.' : 'Allow the rear camera to scan the group QR.');
+    if (!window.isSecureContext || (!this.host && !navigator.mediaDevices?.getUserMedia) || !window.RTCPeerConnection) {
       throw Error('Open TrekTalk in Safari or Chrome using its HTTPS address.');
     }
-    const Context = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new Context({latencyHint: 'interactive'});
-    if (!this.ctx.audioWorklet) throw Error('This browser needs AudioWorklet support. Open TrekTalk in an up-to-date browser.');
-    this.ctx.resume().catch(() => {});
-    const audioSettings = {channelCount: 1, echoCancellation: true, noiseSuppression: true};
-    const stream = this.host ? await navigator.mediaDevices.getUserMedia({video:false,audio:audioSettings}) : await openRearCamera(audioSettings);
-    if (this.closed) { stream.getTracks().forEach(t => t.stop()); return; }
-    this.stream = stream;
-    this.audio = new RadioAudio(this.ctx, stream, frame => {
-      if (this.host) this.room.frame(HOST, frame);
-      else this.guestAttempt?.link.sendVoice(frame);
-    });
-    await this.audio.init();
-    if (this.closed) return;
-    this.ctx.onstatechange = () => this.renderAudioButton();
-    this.renderAudioButton();
-    if (!this.host) await this.scanner.start(stream.getVideoTracks()[0]);
-    if (this.closed) return;
+    if (!this.host) {
+      const stream = await openRearCamera();
+      const track = stream.getVideoTracks()[0];
+      if (this.closed) { track.stop(); return; }
+      await this.scanner.start(track);
+      if (this.closed) return;
+    }
     this.leaseTimer = setInterval(() => {
       if (this.host) this.room.tick();
       if (this.held && this.radioState.mode === 'tx') this.command({op: 'keep', press: this.held.press});
@@ -140,7 +127,7 @@ class Session {
     } catch {}
   }
   async restartCamera() {
-    if (this.host || this.closed || page !== 'pair' || !this.audio || this.restarting) return;
+    if (this.host || this.closed || page !== 'pair' || this.restarting) return;
     this.restarting = true;
     try {
       this.scanner.stop();
@@ -165,7 +152,7 @@ class Session {
     if (this.closed || this.group !== group || page !== 'pair') return;
     if (this.room.members.size >= CAPACITY) { optics('wait','All 10 radios are paired.'); return; }
     $('pairTitle').textContent = 'Group QR code';
-    drawCode($('joinQr'), 'TREK13:' + group.toUpperCase());
+    drawCode($('joinQr'), 'TREK14:' + group.toUpperCase());
     optics('offer');
     const prompt = 'Each guest scans this QR once. Their name appears below.';
     hint(prompt);
@@ -187,8 +174,8 @@ class Session {
   }
   readQR(text) {
     if (this.host || this.closed || page !== 'pair' || this.guestAttempt) return;
-    const match=/^TREK13:([0-9A-F]{32})$/.exec(text);
-    if (!match) { hint('Scan a v13 group QR from the host phone.'); return; }
+    const match=/^TREK14:([0-9A-F]{32})$/.exec(text);
+    if (!match) { hint('Scan a v14 group QR from the host phone.'); return; }
     this.joinGroup(match[1].toLowerCase());
   }
   async joinGroup(group) {
@@ -201,13 +188,12 @@ class Session {
       const reply=await mailbox(group,a.invite,this.serviceURL,this.abort.signal);
       a.link=new Link({
         initiator:true,
-        ready:()=>a.link.send({op:'hello',version:13,name:this.name}),
+        ready:()=>a.link.send({op:'hello',version:14,name:this.name}),
         control:msg=>{
           if(this.guestAttempt!==a || this.closed)return;
           if(msg.op==='welcome' && msg.invite===a.invite){a.welcomed=true;a.link.send({op:'here'});}
           else if(a.welcomed)this.receive(msg);
         },
-        voice:frame=>{if(this.guestAttempt===a)this.audio.play(frame);},
         lost:reason=>this.guestLost(a,reason)
       });
       const sdp=await a.link.offer();
@@ -228,7 +214,7 @@ class Session {
           if(typeof result?.sdp==='string'){
             await a.link.accept({type:'answer',sdp:result.sdp});
             if(!a.welcomed && !this.closed && this.guestAttempt===a)
-              a.timeout=setTimeout(()=>this.guestLost(a,'The host replied, but the local voice connection timed out. Check the shared hotspot.'),16000);
+              a.timeout=setTimeout(()=>this.guestLost(a,'The host replied, but the local connection timed out. Check the shared hotspot.'),16000);
             return;
           }
           a.timeout=setTimeout(check,650);
@@ -273,7 +259,6 @@ class Session {
       a.entry = this.showScan(invite, guest);
       a.link = new Link({
         initiator: false, ready: () => {}, control: msg => this.fromGuest(a, msg),
-        voice: frame => { if (a.id) this.room.frame(a.id, frame); },
         lost: reason => this.hostLost(a, reason)
       });
       a.link.invite = invite;
@@ -292,7 +277,7 @@ class Session {
       return;
     }
     if (a.phase !== 'linking') return;
-    if (msg.op === 'hello' && msg.version === 13) {
+    if (msg.op === 'hello' && msg.version === 14) {
       a.name = displayName(msg.name, 'Hiker');
       a.link.send({op: 'welcome', invite: a.invite});
     }
@@ -341,7 +326,6 @@ class Session {
     view('radio');
     this.scanner.stop();
     $('add').hidden = !this.host || this.roster?.people.length >= CAPACITY;
-    this.renderAudioButton();
     this.paintTargets();
   }
   go() {
@@ -380,22 +364,14 @@ class Session {
       return;
     }
     if (msg.op === 'denied') {
-      if (this.held?.press === msg.press) { this.audio.gate(0); this.held = null; this.paintFloor(); }
+      if (this.held?.press === msg.press) { this.held = null; this.paintFloor(); }
       return;
     }
     if (msg.op !== 'floor') return;
     this.radioState = msg;
-    if (msg.mode === 'tx') {
-      if (this.held?.press !== msg.press || this.held?.target !== msg.target || page !== 'radio' || document.hidden) {
-        this.audio.gate(0);
-        this.command({op: 'release', press: msg.press});
-        return;
-      }
-      this.audio.listen(0);
-      this.audio.gate(msg.token);
-    } else {
-      this.audio?.gate(0);
-      this.audio?.listen(msg.mode === 'rx' ? msg.token : 0);
+    if (msg.mode === 'tx' && (this.held?.press !== msg.press || this.held?.target !== msg.target || page !== 'radio' || document.hidden)) {
+      this.command({op: 'release', press: msg.press});
+      return;
     }
     this.paintFloor();
   }
@@ -416,7 +392,7 @@ class Session {
         button.dataset.target = id;
         button.className = id === ALL ? 'all' : 'person';
         const label = document.createElement('span');
-        label.textContent = 'Talk to ' + name;
+        label.textContent = 'Signal ' + name;
         const keyLabel = document.createElement('span');
         keyLabel.className = 'key';
         keyLabel.setAttribute('aria-hidden', 'true');
@@ -435,11 +411,11 @@ class Session {
     if (page !== 'radio' || !this.roster) return;
     const {mode, name} = this.radioState;
     const enabled = this.roster.started && this.roster.people.length > 1;
-    let label = 'Listening';
-    if (!this.roster.started) label = 'Paired. Waiting for the host to open Talkie.';
-    else if (this.roster.people.length < 2) label = 'Waiting for another radio.';
-    else if (mode === 'tx' && this.held) label = 'Transmitting · release to listen';
-    else if (mode === 'rx') label = 'Receiving from ' + name;
+    let label = 'Ready';
+    if (!this.roster.started) label = 'Paired. Waiting for the host to open the group.';
+    else if (this.roster.people.length < 2) label = 'Waiting for another person.';
+    else if (mode === 'tx' && this.held) label = 'Signaling · release to stop';
+    else if (mode === 'rx') label = 'Signal from ' + name;
     else if (mode === 'busy') label = 'Channel busy';
     else if (this.held) label = 'Requesting channel…';
     $('channel').dataset.mode = mode;
@@ -449,7 +425,7 @@ class Session {
       button.classList.toggle('held', active);
       button.setAttribute('aria-pressed', String(active));
       button.setAttribute('aria-disabled', String(!enabled || (!active && mode !== 'idle')));
-      button.lastElementChild.textContent = active ? 'ON AIR' : 'HOLD';
+      button.lastElementChild.textContent = active ? 'SENDING' : 'HOLD';
     }
   }
   command(msg) {
@@ -459,7 +435,6 @@ class Session {
   press(target, key) {
     if (page !== 'radio' || !this.roster?.started || this.roster.people.length < 2 || this.held ||
         this.radioState.mode !== 'idle' || document.hidden) return;
-    this.ctx.resume().catch(() => {});
     this.held = {target, press: ++this.counter, key};
     this.paintFloor();
     this.command({op: 'ask', target, press: this.held.press});
@@ -468,12 +443,8 @@ class Session {
     if (!this.held || (key !== undefined && key !== this.held.key)) return;
     const {press} = this.held;
     this.held = null;
-    this.audio?.gate(0);
     this.command({op: 'release', press});
     this.paintFloor();
-  }
-  renderAudioButton() {
-    $('resume').hidden = page !== 'radio' || this.ctx.state === 'running';
   }
   close() {
     if (this.closed) return;
@@ -489,9 +460,6 @@ class Session {
     } else this.guestAttempt?.link.send({op: 'leave'});
     this.drop(this.guestAttempt);
     this.scanner.stop();
-    this.audio?.close();
-    this.stream?.getTracks().forEach(t => t.stop());
-    this.ctx?.close().catch(() => {});
     this.wakeLock?.release().catch(() => {});
   }
 }
@@ -521,7 +489,6 @@ $('go').onclick = () => current?.go();
 $('refreshOffer').onclick = () => { $('tools').open = false; current?.showGroup(); };
 $('leave').onclick = () => end();
 $('add').onclick = () => current?.addPhone().catch(e => hint(errorText(e)));
-$('resume').onclick = () => current?.ctx.resume().catch(e => { $('channelLabel').textContent = errorText(e); });
 $('retryCamera').onclick = async () => {
   $('tools').open = false;
   const s = current;
@@ -563,15 +530,15 @@ window.addEventListener('blur', () => current?.release());
 window.addEventListener('pagehide', () => end());
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) current?.release();
-  else { current?.wake(); current?.renderAudioButton(); }
+  else current?.wake();
 });
 
 async function prepareOffline() {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
   const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
   const markReady = async () => {
-    const hit = await caches.match(new URL('./__trektalk_ready_v13__', location.href).href, {cacheName: 'trektalk-v13'});
-    if (hit) $('offline').textContent = 'Ready offline · v13';
+    const hit = await caches.match(new URL('./__trektalk_ready_v14__', location.href).href, {cacheName: 'trektalk-v14'});
+    if (hit) $('offline').textContent = 'Ready offline · v14';
     return Boolean(hit);
   };
   if (await markReady()) return;

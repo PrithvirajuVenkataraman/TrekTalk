@@ -1,5 +1,3 @@
-// One independent connection per guest. The QR carries only SCTP bootstrap
-// information. Audio frames and channel control then use separate data channels.
 async function localDescription(pc, description) {
   await pc.setLocalDescription(description);
   const snapshot = () => pc.localDescription?.sdp || '';
@@ -33,23 +31,16 @@ async function localDescription(pc, description) {
 }
 
 export class Link {
-  constructor({initiator, ready, control, voice, lost}) {
+  constructor({initiator, ready, control, lost}) {
     this.pc = new RTCPeerConnection({iceServers: [], bundlePolicy: 'max-bundle'});
-    this.channels = {};
     this.closed = false;
     this.open = false;
     this.onLost = lost;
     const attach = channel => {
-      const name = channel.label;
-      if (!['control', 'voice'].includes(name) || this.channels[name]) { channel.close(); return; }
-      this.channels[name] = channel;
-      channel.binaryType = 'arraybuffer';
+      if (channel.label !== 'control' || this.channel) { channel.close(); return; }
+      this.channel = channel;
       channel.onmessage = event => {
         if (this.closed) return;
-        if (name === 'voice') {
-          if (event.data instanceof ArrayBuffer && event.data.byteLength === 326) voice(event.data);
-          return;
-        }
         if (typeof event.data !== 'string' || event.data.length > 8192) return;
         let details;
         try { details = JSON.parse(event.data); } catch { return; }
@@ -58,7 +49,7 @@ export class Link {
       channel.onclose = () => this.fail('Radio link closed.');
       channel.onerror = () => this.fail('Radio link interrupted.');
       const check = () => {
-        if (!this.open && !this.closed && ['control', 'voice'].every(k => this.channels[k]?.readyState === 'open')) {
+        if (!this.open && !this.closed && channel.readyState === 'open') {
           this.open = true;
           ready();
         }
@@ -75,7 +66,6 @@ export class Link {
     };
     if (initiator) {
       attach(this.pc.createDataChannel('control', {ordered: true}));
-      attach(this.pc.createDataChannel('voice', {ordered: false, maxRetransmits: 0}));
     }
   }
   async offer() { return localDescription(this.pc, await this.pc.createOffer()); }
@@ -85,14 +75,8 @@ export class Link {
   }
   accept(answer) { return this.pc.setRemoteDescription(answer); }
   send(message) {
-    if (this.channels.control?.readyState !== 'open') return false;
-    try { this.channels.control.send(JSON.stringify(message)); return true; } catch { return false; }
-  }
-  sendVoice(packet) {
-    const channel = this.channels.voice;
-    if (channel?.readyState === 'open' && channel.bufferedAmount < 8192) {
-      try { channel.send(packet); } catch { /* A closing radio drops the frame. */ }
-    }
+    if (this.channel?.readyState !== 'open') return false;
+    try { this.channel.send(JSON.stringify(message)); return true; } catch { return false; }
   }
   fail(reason) {
     if (this.closed) return;

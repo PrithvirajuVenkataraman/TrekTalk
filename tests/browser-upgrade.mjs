@@ -9,7 +9,7 @@ const {chromium} = createRequire(import.meta.url)('playwright-core');
 const currentRoot = fileURLToPath(new URL('../', import.meta.url));
 const previousRoot = process.env.TREKTALK_PREVIOUS_ROOT;
 const previousVersion = process.env.TREKTALK_PREVIOUS_VERSION;
-assert.ok(previousRoot && ['8','9','10','11','12'].includes(previousVersion), 'Specify the old release directory and version');
+assert.ok(previousRoot && ['8','9','10','11','12','13'].includes(previousVersion), 'Specify the old release directory and version');
 let root = previousRoot;
 let online = true;
 const types = {'.js':'text/javascript', '.mjs':'text/javascript', '.html':'text/html',
@@ -35,15 +35,15 @@ try {
 
   // Simulate a deployment while this phone still has the old cache and worker.
   root = currentRoot;
-  await page.goto(site + '/?update=13');
-  await page.getByText('Ready offline · v13', {exact:true}).waitFor();
+  await page.goto(site + '/?update=14');
+  await page.getByText('Ready offline · v14', {exact:true}).waitFor();
   await page.waitForFunction(async v => !(await caches.has('trektalk-v' + v)), previousVersion);
   online = false;
   await page.reload();
-  await page.getByText('Ready offline · v13', {exact:true}).waitFor();
+  await page.getByText('Ready offline · v14', {exact:true}).waitFor();
   const controls = await page.getByRole('button').allTextContents();
   assert.ok(controls.includes('Host a group') && controls.includes('Scan a QR code'));
-  console.log('PASS: upgraded v' + previousVersion + ' to v13 and reopened offline');
+  console.log('PASS: upgraded v' + previousVersion + ' to v14 and reopened offline');
 } finally {
   await browser?.close();
   server.close();

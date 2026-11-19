@@ -8,13 +8,13 @@
   <title>TrekTalk</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./icon.svg">
-  <link rel="stylesheet" href="./style.css?v=13">
+  <link rel="stylesheet" href="./style.css?v=14">
 </head>
 <body>
 <main>
   <header>
     <span class="brand"><img src="./icon.svg" alt="" width="34" height="34">TrekTalk</span>
-    <span class="version">v13</span>
+    <span class="version">v14</span>
     <details id="tools" hidden>
       <summary>Options</summary>
       <div class="menu">
@@ -27,15 +27,15 @@
     </details>
   </header>
   <section id="home">
-    <h1>Group radio</h1>
+    <h1>Group signals</h1>
     <p>Join the same hotspot. For new connections, use Vercel online or a local service offline.</p>
     <details id="pairSettings"><summary>Pairing settings</summary>
       <label for="relay">Local pairing service (optional)</label>
       <input id="relay" type="text" inputmode="url" placeholder="https://radio.local:8443" autocapitalize="none" spellcheck="false">
-      <p class="small">For offline joining, enter the same local HTTPS service on all phones. An empty field uses Vercel and needs internet to join. Voice uses the hotspot.</p>
+      <p class="small">For offline joining, enter the same local HTTPS service on all phones. An empty field uses Vercel and needs internet to join. Group signals use the hotspot.</p>
     </details>
     <label for="name">Your name</label>
-    <input id="name" type="text" maxlength="24" placeholder="Name on the radio" autocomplete="nickname">
+    <input id="name" type="text" maxlength="24" placeholder="Name in the group" autocomplete="nickname">
     <div class="startActions">
       <button id="host" class="primary" type="button">Host a group</button>
       <button id="guest" type="button">Scan a QR code</button>
@@ -58,21 +58,20 @@
       <p id="noScans">No guests scanned yet.</p>
       <ul id="scanList" aria-label="Scanned guests" aria-live="polite" aria-relevant="additions text"></ul>
     </div>
-    <button id="go" class="primary" type="button" hidden disabled>Go to Talkie</button>
+    <button id="go" class="primary" type="button" hidden disabled>Open group</button>
   </section>
   <section id="radio" hidden>
     <div id="roomMeta" class="meta"></div>
-    <h1>Talkie</h1>
-    <div id="channel" class="channel" data-mode="idle" role="status" aria-live="polite"><i></i><span id="channelLabel">Listening</span></div>
-    <p class="usage">Hold a button to speak. Release to listen.</p>
+    <h1>Group signals</h1>
+    <div id="channel" class="channel" data-mode="idle" role="status" aria-live="polite"><i></i><span id="channelLabel">Ready</span></div>
+    <p class="usage">Hold a button to show your signal on the selected phones. Release to clear it.</p>
     <div id="targets" class="targets"></div>
-    <button id="resume" type="button" hidden>Enable radio audio</button>
     <button id="add" type="button" class="plain" hidden>Pair another phone</button>
   </section>
   <input id="photoFile" type="file" accept="image/*" hidden>
 </main>
 <script src="./vendor/qr.js"></script>
 <script src="./vendor/scan.js"></script>
-<script type="module" src="./app.js?v=13"></script>
+<script type="module" src="./app.js?v=14"></script>
 </body>
 </html>

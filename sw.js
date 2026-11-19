@@ -1,15 +1,15 @@
-const CACHE = 'trektalk-v13';
+const CACHE = 'trektalk-v14';
 const CORE = [
-  './', './index.html', './manifest.json', './icon.svg', './style.css?v=13', './app.js?v=13',
+  './', './index.html', './manifest.json', './icon.svg', './style.css?v=14', './app.js?v=14',
   './vendor/qr.js', './vendor/scan.js',
-  ...['pairing.mjs','link.mjs','room.mjs','audio.mjs','signaling.mjs','scanner.mjs','capture.worklet.js']
-    .map(file => './radio/' + file + '?v=13')
+  ...['pairing.mjs','link.mjs','room.mjs','signaling.mjs','scanner.mjs']
+    .map(file => './radio/' + file + '?v=14')
 ];
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await cache.addAll(CORE.map(path => new Request(new URL(path, self.location.href), {cache: 'reload'})));
-    await cache.put(new URL('./__trektalk_ready_v13__', self.location.href), new Response('ready'));
+    await cache.put(new URL('./__trektalk_ready_v14__', self.location.href), new Response('ready'));
     await self.skipWaiting();
   })());
 });

@@ -2,7 +2,7 @@ name: Group radio checks
 on:
   workflow_dispatch:
   push:
-    branches: [main, test/group-radio-v9, test/rear-camera, test/host-scan, test/scanned-guests, test/silent-join]
+    branches: [main, test/group-radio-v9, test/rear-camera, test/host-scan, test/scanned-guests, test/silent-join, test/no-audio]
     paths:
       - 'radio/**'
       - 'app.js'
@@ -27,11 +27,11 @@ jobs:
         run: node --test tests/*.cjs
       - name: Install test driver
         run: npm install --no-save --package-lock=false --ignore-scripts playwright-core@1.62.1
-      - name: Test ten radios with offline camera pairing and audio
+      - name: Test ten silent devices with microphone and audio playback blocked
         run: node tests/browser-group.mjs
-      - name: Test updates from cached v8 through v12 installations
+      - name: Test updates from cached v8 through v13 installations
         run: |
-          for version in 8 9 10 11 12; do
+          for version in 8 9 10 11 12 13; do
             export TREKTALK_PREVIOUS_VERSION="$version"
             export TREKTALK_PREVIOUS_ROOT="$RUNNER_TEMP/trektalk-v$version"
             case "$version" in
@@ -40,6 +40,7 @@ jobs:
               10) ref=d5b59892097b4b92ace4e6bc25e1c65e4543c755 ;;
               11) ref=b30116b16adf7f1fe277134e54b6f7b087d396d0 ;;
               12) ref=848b6432dda11af6b2202223f68ff062601579e7 ;;
+              13) ref=ee9553d9c5af9fceec2cdf3d91faac5b38713465 ;;
             esac
             mkdir -p "$TREKTALK_PREVIOUS_ROOT"
             git archive "$ref" | tar -x -C "$TREKTALK_PREVIOUS_ROOT"
