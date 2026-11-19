@@ -36,3 +36,13 @@ test('camera-readable offers and replies retain exact local addresses, credentia
   assert.equal(unpack('WIFI:S:unrelated;;'),null);
   assert.equal(unpack('TK9O:001122334455:???*'),null);
 });
+
+test('join QR carries the guest identity without changing the acoustic offer dictionary', async () => {
+  const {newInvite, pack, unpack} = await import('../radio/pairing.mjs');
+  const guest = {tag: 'AB0123CD4567', name: 'பிரித்வி', device: 'iPhone'};
+  const invite = newInvite();
+  assert.deepEqual(unpack(pack('offer', invite, sample, guest)), {
+    invite, guest, description: {type: 'offer', sdp: sample}
+  });
+  assert.throws(() => pack('offer', invite, sample, {...guest, name: 'a'.repeat(97)}));
+});

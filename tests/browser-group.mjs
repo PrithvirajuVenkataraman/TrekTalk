@@ -52,6 +52,10 @@ try{
     window.peerReports=[];
     window.RTCPeerConnection=class extends rtc{
       constructor(opts){super(opts);window.peerReports.push(this);}
+      async createAnswer(...args){
+        if(window.failNextAnswer){window.failNextAnswer=false;throw Error('Test connection failed');}
+        return super.createAnswer(...args);
+      }
     };
     const originalMic = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     navigator.mediaDevices.getUserMedia=async function(constraints){
@@ -79,7 +83,7 @@ try{
     window.pointAt=async url=>{const im=new Image();im.src=url;await im.decode();window.cameraPicture=im;};
   }
   async function phone(name){
-    const ctx=await browser.newContext({viewport:{width:393,height:852}});
+    const ctx=await browser.newContext({viewport:{width:393,height:852}, ...(name==='iPhone' ? {userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15'} : {})});
     await ctx.grantPermissions(['microphone','camera']);
     await ctx.addInitScript(installMediaFixtures);
     await ctx.exposeBinding('emitSpeaker',async(_source,encoded)=>{
@@ -88,14 +92,14 @@ try{
     });
     const p=await ctx.newPage();
     p.on('pageerror',e=>console.log('PAGE ERROR',name,e.message));p.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',name,m.text());});
-    await p.goto(site);await p.getByText('Ready offline · v11').waitFor({timeout:10000});await p.fill('#name',name);return p;
+    await p.goto(site);await p.getByText('Ready offline · v12').waitFor({timeout:10000});await p.fill('#name',name);return p;
   }
   const host=await phone('OnePlus'),iphone=await phone('iPhone'),third=await phone('Arun');
   pages.push(host,iphone,third);
   const more=[];
   for(let i=4;i<=10;i++) more.push(await phone('Hiker '+i));
   online=false;
-  await iphone.reload();await iphone.getByText('Ready offline · v11').waitFor();await iphone.fill('#name','iPhone');
+  await iphone.reload();await iphone.getByText('Ready offline · v12').waitFor();await iphone.fill('#name','');
   await host.evaluate(()=>{window.isTestHost=true;window.noRearCamera=true;});
   await host.click('#host');
   await host.getByText(/Rear camera unavailable/).waitFor();
@@ -105,9 +109,15 @@ try{
   async function point(p,data){await p.evaluate(data=>window.pointAt(data),data);}
   async function pair(guest, started=false){
     nearbyGuest=guest;
+    const guestName=await guest.locator('#name').inputValue() || 'iPhone';
+    const countBefore=await host.locator('#scanList li').count();
     await guest.click('#guest');
     const initial=await imageOf(guest,'#joinQr');
     if(started && guest===third) {
+      await host.evaluate(()=>{window.failNextAnswer=true;});
+      await point(host,initial);
+      await host.locator('#scanList li').filter({hasText:'Arun'}).getByText('Pairing failed',{exact:true}).waitFor();
+      await host.evaluate(()=>{window.cameraPicture=null;});
       await guest.locator('#tools summary').click();await guest.click('#refreshOffer');
       await guest.waitForFunction(old=>!document.getElementById('joinQr').hidden &&
         document.getElementById('joinQr').toDataURL()!==old,initial);
@@ -120,8 +130,15 @@ try{
     missNextTone=started && guest===third;
     const start=Date.now();await point(host,offer);
     await host.getByText('QR read',{exact:true}).waitFor();
+    const row=host.locator('#scanList li').filter({has:host.getByText(guestName,{exact:true})});
+    await row.getByText('Scanned · Connecting',{exact:true}).waitFor();
+    assert.equal(await row.count(),1);
+    assert.equal(await host.locator('#scanList li').count(),countBefore+(started && guest===third ? 0 : 1));
+    if(guest===third)assert.equal(await row.locator('small').innerText(),'Linux device');
+    assert.equal(await guest.locator('#scannedGuests').isVisible(),false);
     await host.evaluate(()=>{window.cameraPicture=null;});
     await guest.locator('#radio').waitFor({state:'visible',timeout:35000});
+    await row.getByText('Connected',{exact:true}).waitFor();
     console.log('One host scan, acoustic reply, guest entered Talkie in ms',Date.now()-start);
     assert.equal(await guest.evaluate(()=>window.cameraRequests),0);
     assert.match(await guest.locator('#channelLabel').innerText(),started ? /Listening/ : /Waiting for the host/);
@@ -152,10 +169,12 @@ try{
   assert.equal(await iphone.locator('#targets button').count(),2);
   // Reopen pairing without losing the existing radio. Refresh rotates just the pending offer.
   await host.click('#add');
+  await host.locator('#scanList li').filter({hasText:'Arun'}).getByText('Disconnected',{exact:true}).waitFor();
   assert.equal(await iphone.locator('#targets button').count(),2);
   await pair(third,true);
   for(const hiker of more){pages.push(hiker);await pair(hiker,true);}
   await host.getByText('All 10 radios are paired.').waitFor();
+  assert.equal(await host.locator('#scanList li[data-state=connected]').count(),9);
   await host.click('#go');
   for(const page of pages) assert.equal(await page.locator('#targets button').count(),10);
   await transmit(host,'Talk to everyone',pages.slice(1).map((_,i)=>i+1));

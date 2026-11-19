@@ -8,13 +8,13 @@
   <title>TrekTalk</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./icon.svg">
-  <link rel="stylesheet" href="./style.css?v=11">
+  <link rel="stylesheet" href="./style.css?v=12">
 </head>
 <body>
 <main>
   <header>
     <span class="brand"><img src="./icon.svg" alt="" width="34" height="34">TrekTalk</span>
-    <span class="version">v11</span>
+    <span class="version">v12</span>
     <details id="tools" hidden>
       <summary>Options</summary>
       <div class="menu">
@@ -48,6 +48,11 @@
       <canvas id="joinQr" class="qrCard" aria-label="Guest join QR" hidden></canvas>
       <div id="preparing" aria-live="polite">Starting camera…</div>
     </div>
+    <div id="scannedGuests" hidden>
+      <h2>Scanned guests <span id="scanCount">0</span></h2>
+      <p id="noScans">No guests scanned yet.</p>
+      <ul id="scanList" aria-label="Scanned guests" aria-live="polite" aria-relevant="additions text"></ul>
+    </div>
     <button id="pairAudio" type="button" hidden>Enable pairing sound</button>
     <button id="go" class="primary" type="button" hidden disabled>Go to Talkie</button>
   </section>
@@ -65,6 +70,6 @@
 <script src="./vendor/qr.js"></script>
 <script src="./vendor/scan.js"></script>
 <script src="./vendor/pako.js"></script>
-<script type="module" src="./app.js?v=11"></script>
+<script type="module" src="./app.js?v=12"></script>
 </body>
 </html>

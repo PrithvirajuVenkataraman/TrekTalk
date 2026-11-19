@@ -1,10 +1,10 @@
 # TrekTalk
 
-An offline group radio for a shared Wi-Fi network or phone hotspot. Version 11 supports one host and up to nine guests. Sound and connection control go directly over local WebRTC data channels. Vercel distributes the static app before the trek.
+An offline group radio for a shared Wi-Fi network or phone hotspot. Version 12 supports one host and up to nine guests. Sound and connection control go directly over local WebRTC data channels. Vercel distributes the static app before the trek.
 
 ## First use
 
-1. On each phone, open the HTTPS site while online. Wait for **Ready offline · v11**. If using an iPhone Home Screen installation, open the installed app while online too.
+1. On each phone, open the HTTPS site while online. Wait for **Ready offline · v12**. If using an iPhone Home Screen installation, open the installed app while online too.
 2. Turn off mobile data. Keep the OnePlus hotspot on and connect each guest to it. Leave the app in the foreground.
 3. On the guest phone enter a name, tap **Show my join QR**, and allow microphone access. Leave this QR on screen. The guest never opens a camera.
 4. On the host enter a name and tap **Host a group**. Allow rear camera and microphone access. Point the rear camera at the guest QR once. Keep the phones close with the host speaker audible and headphones disconnected.
@@ -15,8 +15,8 @@ An offline group radio for a shared Wi-Fi network or phone hotspot. Version 11 s
 
 ## How it works
 
-- Each guest creates an independent WebRTC offer and a random 128-bit invitation key. The host scans the QR containing both. It compresses its answer using the offer as a dictionary and authenticates and encrypts the answer with AES-GCM. An audible multi-frequency signal carries the answer to the nearby guest. No internet or local signaling server is required.
-- A synchronization sweep, calibration tones and interleaved parity blocks help the receiver decode the audio. The guest accepts only a reply authenticated with its invitation key. Both phones must use v11. The microphone listens locally during guest pairing and returns to push-to-talk mode on connection.
+- Each guest creates an independent WebRTC offer and a random 128-bit invitation key. The QR includes the guest name and device label. The host lists the guest immediately after scanning and marks the entry Connected after the guest confirms. Failed or disconnected guests remain labeled on the host pairing screen. It compresses its answer using the offer as a dictionary and authenticates and encrypts the answer with AES-GCM. An audible multi-frequency signal carries the answer to the nearby guest. No internet or local signaling server is required.
+- A synchronization sweep, calibration tones and interleaved parity blocks help the receiver decode the audio. The guest accepts only a reply authenticated with its invitation key. Both phones must use v12. The microphone listens locally during guest pairing and returns to push-to-talk mode on connection.
 - Two local data channels carry reliable ordered control and time-sensitive unordered voice. Microphone audio is sampled at 16 kHz, encoded as 20 ms µ-law frames and played through Web Audio. The microphone track starts muted. Transmission begins only after a channel grant and stops on release, cancellation, loss of focus or disconnection.
 - The hub checks the grant, sender and destination of every audio packet. A short renewable lease clears abandoned transmissions. No audio is stored. Individual transmissions pass through the host, which must be trusted.
 - The camera stops when Talkie opens. Rear camera focus, lighting, permissions and local network setup affect pairing time. There is no guaranteed scan time, range, screen-lock operation or emergency service connection. Stay within hotspot range. The hotspot must permit local traffic to its host.

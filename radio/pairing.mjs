@@ -47,20 +47,48 @@ export function roomNumber() {
   return String(word[0] % 1000000).padStart(6, '0');
 }
 
-export function pack(type, invite, sdp) {
+export function pack(type, invite, sdp, guest) {
   if (!['offer', 'answer'].includes(type) || !/^[0-9A-F]{32}$/.test(invite)) throw Error('Invalid invitation.');
   const compressed = globalThis.pako.deflateRaw(utf8.encode(sdp), {level: 9, dictionary});
+  if (guest && type === 'offer') {
+    const name = utf8.encode(guest.name);
+    const device = utf8.encode(guest.device);
+    if (name.length > 96 || device.length > 96 || !/^[0-9A-F]{12}$/.test(guest.tag)) throw Error('Invalid guest label.');
+    const bytes = new Uint8Array(8 + name.length + device.length + compressed.length);
+    bytes.set(guest.tag.match(/../g).map(part => parseInt(part, 16)));
+    bytes.set([name.length, device.length], 6);
+    bytes.set(name, 8);
+    bytes.set(device, 8 + name.length);
+    bytes.set(compressed, 8 + name.length + device.length);
+    return 'TK12O:' + invite + ':' + base45(bytes) + '*';
+  }
   return 'TK11' + (type === 'offer' ? 'O' : 'A') + ':' + invite + ':' + base45(compressed) + '*';
 }
 
 export function unpack(text) {
   if (typeof text !== 'string' || text.length > 4096) return null;
-  const header = /^TK11([OA]):([0-9A-F]{32}):/.exec(text);
+  const header = /^(TK11[OA]|TK12O):([0-9A-F]{32}):/.exec(text);
   if (!header || !text.endsWith('*')) return null;
   try {
-    const sdp = inflateSDP(unbase45(text.slice(header[0].length, -1)), dictionary);
+    let bytes = unbase45(text.slice(header[0].length, -1));
+    let guest;
+    if (header[1] === 'TK12O') {
+      const nameEnd = 8 + bytes[6];
+      const deviceEnd = nameEnd + bytes[7];
+      if (bytes.length < 9 || bytes[6] > 96 || bytes[7] > 96 || deviceEnd >= bytes.length) return null;
+      const decode = new TextDecoder('utf-8', {fatal: true});
+      guest = {
+        tag: Array.from(bytes.subarray(0, 6), n => n.toString(16).padStart(2, '0')).join('').toUpperCase(),
+        name: decode.decode(bytes.subarray(8, nameEnd)),
+        device: decode.decode(bytes.subarray(nameEnd, deviceEnd))
+      };
+      bytes = bytes.subarray(deviceEnd);
+    }
+    const sdp = inflateSDP(bytes, dictionary);
     if (!sdp) return null;
-    return {invite: header[2], description: {type: header[1] === 'O' ? 'offer' : 'answer', sdp}};
+    const result = {invite: header[2], description: {type: header[1].endsWith('O') ? 'offer' : 'answer', sdp}};
+    if (guest) result.guest = guest;
+    return result;
   } catch { return null; }
 }
 

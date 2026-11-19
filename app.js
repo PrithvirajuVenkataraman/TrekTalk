@@ -1,9 +1,9 @@
-import {ToneReader, renderTone} from './radio/sound.mjs?v=11';
-import {newInvite, roomNumber, pack, unpack, drawCode, sealAnswer, openAnswer} from './radio/pairing.mjs?v=11';
-import {Link} from './radio/link.mjs?v=11';
-import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=11';
-import {RadioAudio} from './radio/audio.mjs?v=11';
-import {Scanner} from './radio/scanner.mjs?v=11';
+import {ToneReader, renderTone} from './radio/sound.mjs?v=12';
+import {newInvite, roomNumber, pack, unpack, drawCode, sealAnswer, openAnswer} from './radio/pairing.mjs?v=12';
+import {Link} from './radio/link.mjs?v=12';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=12';
+import {RadioAudio} from './radio/audio.mjs?v=12';
+import {Scanner} from './radio/scanner.mjs?v=12';
 
 const $ = id => document.getElementById(id);
 async function openRearCamera(audio = false) {
@@ -24,6 +24,21 @@ async function openRearCamera(audio = false) {
 }
 let current;
 let page = 'home';
+// This tag lasts for this page load. It only matches refreshed invitations in the host list.
+let guestTag;
+function deviceLabel() {
+  const ua = navigator.userAgent;
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
+  if (/Android/i.test(ua)) {
+    const model = /;\s*([^;()]+?)\s+Build\//i.exec(ua)?.[1];
+    return model && model !== 'K' ? displayName(model, 'Android') : 'Android';
+  }
+  if (/Macintosh/i.test(ua)) return 'Mac';
+  if (/Windows/i.test(ua)) return 'Windows device';
+  if (/Linux/i.test(ua)) return 'Linux device';
+  return 'Device';
+}
 
 function view(next) {
   page = next;
@@ -31,6 +46,7 @@ function view(next) {
   $('tools').hidden = next === 'home';
   $('tools').open = false;
   $('refreshOffer').hidden = next !== 'pair' || current?.host;
+  $('scannedGuests').hidden = next !== 'pair' || !current?.host;
   $('photo').hidden = $('retryCamera').hidden = next !== 'pair' || !current?.host;
   window.scrollTo(0, 0);
 }
@@ -59,6 +75,10 @@ class Session {
     $('pairTiming').hidden = true;
     this.scanner = new Scanner($('camera'), (text, seconds) => this.readQR(text, seconds), hint);
     if (host) {
+      this.scans = new Map();
+      $('scanList').replaceChildren();
+      $('scanCount').textContent = '0';
+      $('noScans').hidden = false;
       this.room = new Room({
         name, code: roomNumber(),
         deliver: (id, msg) => id === HOST ? this.receive(msg) : this.connections.get(id)?.send(msg),
@@ -167,7 +187,8 @@ class Session {
       });
       a.offer = await a.link.offer();
       if (this.closed || this.guestAttempt !== a) return;
-      drawCode($('joinQr'), pack('offer', a.invite, a.offer));
+      guestTag ??= newInvite().slice(0, 12);
+      drawCode($('joinQr'), pack('offer', a.invite, a.offer, {tag: guestTag, name: this.name, device: deviceLabel()}));
       this.audio.pairing(new ToneReader(packet => this.heardAnswer(a, packet)));
       optics('offer');
       hint('Show this code to the host. Keep the phones close while the host plays the pairing sound.');
@@ -188,15 +209,39 @@ class Session {
   }
   readQR(text) {
     if (!this.host || this.closed || page !== 'pair' || !this.audio || this.pending || this.room.members.size >= CAPACITY) return;
-    if (/^(?:TK9|TT[13]:)/.test(text)) { hint('Open TrekTalk v11 on both phones. The guest must show their join QR.'); return; }
+    if (/^(?:TK9|TT[13]:)/.test(text)) { hint('Open TrekTalk v12 on both phones. The guest must show their join QR.'); return; }
     const decoded = unpack(text);
     if (!decoded || decoded.description.type !== 'offer' || this.lastFailed === decoded.invite) return;
     for (const link of this.connections.values()) if (link.invite === decoded.invite) return;
     this.connectGuest(decoded);
   }
-  async connectGuest({invite, description}) {
+  showScan(invite, guest) {
+    const key = guest?.tag || invite;
+    let entry = this.scans.get(key);
+    if (!entry || entry.connected) {
+      const row = document.createElement('li');
+      const name = document.createElement('strong');
+      const device = document.createElement('small');
+      const state = document.createElement('span');
+      row.append(name, device, state);
+      entry = {row, name, device, state};
+      this.scans.set(key, entry);
+    }
+    const device = displayName(guest?.device, '');
+    entry.name.textContent = displayName(guest?.name, device || 'Guest device');
+    entry.device.textContent = device === entry.name.textContent ? '' : device;
+    entry.state.textContent = 'Scanned · Connecting';
+    entry.row.dataset.state = 'pending';
+    $('scanList').prepend(entry.row);
+    $('scanList').scrollTop = 0;
+    $('noScans').hidden = true;
+    $('scanCount').textContent = String($('scanList').childElementCount);
+    return entry;
+  }
+  async connectGuest({invite, description, guest}) {
     const a = {invite, phase: 'linking', readAt: performance.now()};
     this.pending = a;
+    a.entry = this.showScan(invite, guest);
     optics('wait', 'QR read');
     hint('Keep the phones close. Sending the pairing sound from this phone’s speaker.');
     try {
@@ -243,6 +288,10 @@ class Session {
       $('pairTiming').hidden = false;
       this.audio.stopTone();
       a.id = this.room.add(a.name);
+      a.entry.connected = true;
+      a.entry.name.textContent = this.room.members.get(a.id);
+      a.entry.state.textContent = 'Connected';
+      a.entry.row.dataset.state = 'connected';
       this.connections.set(a.id, a.link);
       this.pending = null;
       this.room.publish();
@@ -254,10 +303,15 @@ class Session {
     if (a.id) {
       if (this.connections.get(a.id) !== a.link) return;
       this.connections.delete(a.id);
+      a.entry.connected = false;
+      a.entry.state.textContent = 'Disconnected';
+      a.entry.row.dataset.state = 'ended';
       this.drop(a);
       this.room.remove(a.id);
       if (page === 'pair' && !this.pending) this.scanGuests();
     } else if (this.pending === a) {
+      a.entry.state.textContent = 'Pairing failed';
+      a.entry.row.dataset.state = 'ended';
       this.drop(a);
       this.audio.stopTone();
       this.lastFailed = a.invite;
@@ -447,7 +501,7 @@ function end(message = '') {
 }
 async function start(host) {
   if (current) return;
-  const name = displayName($('name').value, host ? 'Host' : 'Hiker');
+  const name = displayName($('name').value, host ? 'Host' : deviceLabel());
   try { localStorage.setItem('trektalk-name', $('name').value.trim()); } catch {}
   const session = new Session(host, name);
   current = session;
@@ -514,8 +568,8 @@ async function prepareOffline() {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
   const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
   const markReady = async () => {
-    const hit = await caches.match(new URL('./__trektalk_ready_v11__', location.href).href, {cacheName: 'trektalk-v11'});
-    if (hit) $('offline').textContent = 'Ready offline · v11';
+    const hit = await caches.match(new URL('./__trektalk_ready_v12__', location.href).href, {cacheName: 'trektalk-v12'});
+    if (hit) $('offline').textContent = 'Ready offline · v12';
     return Boolean(hit);
   };
   if (await markReady()) return;

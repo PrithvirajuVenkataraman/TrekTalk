@@ -49,3 +49,17 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid
 #resume{width:100%;margin-top:12px}
 @media(max-height:660px){header{min-height:45px;padding:6px 0}#pair{padding-top:9px}#pairHint{min-height:0;margin:5px auto 8px}.optics{width:min(100%,55svh)}#go{margin-top:8px}}
 .menu p{margin:6px 9px 9px;font-size:12px;line-height:1.4}
+
+#scannedGuests{width:min(100%,420px);margin:12px auto;text-align:left}
+#scannedGuests h2{margin:0 0 6px;font-size:16px}
+#scanCount{font-size:14px;color:#c6f08c}
+#noScans{margin:0;font-size:14px}
+#scanList{margin:0;padding:0;list-style:none;max-height:10rem;overflow-y:auto}
+#scanList li{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;align-items:center;border-top:1px solid #ffffff20;padding:7px 2px}
+#scanList strong,#scanList small{grid-column:1;overflow-wrap:anywhere}
+#scanList small{color:#b2c6b8}
+#scanList small:empty{display:none}
+#scanList span{grid-column:2;grid-row:1 / span 2;font-size:13px;color:#f5d190}
+#scanList [data-state=connected] span{color:#c6f08c}
+#scanList [data-state=ended] span{color:#c7cfc9}
+#pair:has(#scannedGuests:not([hidden])) .optics{width:min(100%,420px,43svh)}
