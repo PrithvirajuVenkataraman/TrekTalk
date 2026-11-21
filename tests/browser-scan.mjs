@@ -38,7 +38,8 @@ const cases = [
   {width:640,height:480,size:.35,angle:0,native:false},
   {width:1280,height:720,size:.62,angle:0,native:true},
   {width:1920,height:1080,size:.30,angle:0,native:false},
-  {width:1280,height:720,size:.62,angle:0,native:false,offset:.12}
+  {width:1280,height:720,size:.62,angle:0,native:false,offset:.12},
+  {width:1280,height:720,size:.35,angle:0,native:false,throttle:6}
 ];
 const timings = [];
 try {
@@ -72,7 +73,9 @@ try {
   });
   const page = await context.newPage();
   page.on('pageerror',error=>errors.push(error.message));
+  const device = await context.newCDPSession(page);
   for (const scenario of cases) {
+    await device.send('Emulation.setCPUThrottlingRate',{rate:scenario.throttle || 1});
     await page.goto(site);
     await page.getByText('Ready offline · v17',{exact:true}).waitFor();
     await page.evaluate(scene=>{
@@ -104,6 +107,7 @@ try {
     await page.click('#leave');
     await page.evaluate(()=>clearInterval(window.cameraInterval));
   }
+  await device.send('Emulation.setCPUThrottlingRate',{rate:1});
   if (process.env.TREKTALK_SCREENSHOTS) {
     const dir = process.env.TREKTALK_SCREENSHOTS;
     await mkdir(dir,{recursive:true});
@@ -124,5 +128,5 @@ try {
     console.log('SCREENSHOT_SCANNER '+scan.toString('base64'));
   }
   assert.deepEqual(errors,[]);
-  console.log('PASS: visible QR detection in ms '+timings.join(', ')+'; all six cases under 2 seconds');
+  console.log('PASS: visible QR detection in ms '+timings.join(', ')+'; all seven cases under 2 seconds');
 } finally {await browser.close();server.close();}

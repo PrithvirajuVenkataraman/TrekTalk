@@ -43,6 +43,6 @@ If no local address is available, the app retries once after a rear camera permi
 
 The live scanner first reads a 360 pixel square crop aligned with the visible camera preview. It checks a higher resolution crop and the full frame when needed. Rear camera requests prefer 1280 by 720 video at 24 frames per second. These values are optional camera preferences.
 
-The QR timing test measures from the first presented QR image to the on-screen QR scanned state. It covers landscape and portrait camera frames, rotated codes, smaller codes, and a stalled native decoder. Each test must complete in under two seconds. This measures recognition separately from camera permission, camera startup and the WebRTC connection. Physical phone focus, lighting and processing speed still affect recognition.
+The QR timing test measures from the first presented QR image to the on-screen QR scanned state. It covers landscape and portrait camera frames, rotated codes, smaller codes, a stalled native decoder, and a run with sixfold CPU throttling. Each test must complete in under two seconds. This measures recognition separately from camera permission, camera startup and the WebRTC connection. Physical phone focus, lighting and processing speed still affect recognition.
 
 The home actions share one card. The host screen groups QR refresh, the code, guest status and the primary action together. The group screen keeps the broadcast button above individual controls.
