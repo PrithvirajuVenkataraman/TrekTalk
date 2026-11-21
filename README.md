@@ -28,3 +28,11 @@ Before joining, enter that service's HTTPS address in **Pairing settings** on ev
 Deploy the repository as a static site with its Node function on Vercel. The same-origin endpoint is /api/pair. It uses the Vercel Runtime Cache with a 90-second TTL. If the cache or network is unavailable the app reports a pairing error.
 
 Run `node --test tests/*.cjs` for routing and mailbox checks. The browser workflow exercises a single guest scan, blocks microphone requests and audio playback throughout the session, and tests individual and group visual signals after the signaling endpoint is disconnected. Physical iOS and Android combinations need field testing.
+
+## Mobile checks
+
+The browser workflow tests Chromium, Firefox and WebKit on macOS in all nine host and guest combinations. These tests use QR photo import with simulated camera failures, real WebRTC data channels, touch press cancellation, cached offline startup and layouts at 320, 568 and 768 pixels with enlarged text. The separate ten participant test uses rear camera video fixtures and simultaneous joins.
+
+Camera errors keep the guest on the pairing screen. Options can restart the rear camera or read a QR photo. The scanner falls back to its bundled decoder if the native detector fails or takes longer than 200 milliseconds. All camera requests require the rear camera.
+
+Use a current browser with WebRTC, HTTPS and Web Crypto. Embedded browsers can restrict these features. Test physical Android and iOS devices before relying on the app on a trek. Phones must remain on a shared network with peer traffic enabled and keep the app in the foreground. Browser tests cannot certify every handset, operating system version or hotspot.

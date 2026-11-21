@@ -46,7 +46,7 @@ function fixtures() {
       window.cameraRequests++;
       if (constraints.audio !== false) deny('microphone');
       if (constraints.video?.facingMode?.exact !== 'environment') throw Error('Rear camera required');
-      throw new DOMException('Camera blocked for recovery test', 'NotAllowedError');
+      throw new DOMException('Camera unavailable for recovery test', 'NotAllowedError');
     };
   }
   const Peer = RTCPeerConnection;
@@ -59,6 +59,9 @@ async function phone(engine, name) {
     viewport:{width:320,height:568}, hasTouch:true,
     ...(engine === 'firefox' ? {} : {isMobile:true})
   });
+  // CI cannot resolve multicast hostnames reliably. This browser permission
+  // exposes routable test candidates while the fixture still fails camera access.
+  await context.grantPermissions(['camera']);
   await context.addInitScript(fixtures);
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(engine + ': ' + error.message));

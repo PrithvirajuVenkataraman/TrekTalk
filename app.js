@@ -99,7 +99,7 @@ class Session {
     if (this.host) {
       this.room.publish();
       await this.showGroup();
-    } else {
+    } else if (page === 'pair' && !this.guestAttempt) {
       if (cameraError) {
         optics('wait', 'Camera unavailable');
         hint(cameraError + ' Use Options to restart the rear camera or read a QR photo.');
@@ -123,7 +123,7 @@ class Session {
       this.scanner.stop();
       const stream = await openRearCamera();
       const track = stream.getVideoTracks()[0];
-      if (this.closed || page !== 'pair') { track.stop(); return; }
+      if (this.closed || page !== 'pair' || this.guestAttempt) { track.stop(); return; }
       await this.scanner.start(track);
       if (this.closed) return;
       track.onended = () => {
