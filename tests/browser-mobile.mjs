@@ -40,7 +40,13 @@ function fixtures() {
   for (const key of ['Audio','AudioContext','webkitAudioContext']) {
     if (window[key]) window[key] = class {constructor(){deny(key);}};
   }
-  HTMLMediaElement.prototype.play = async () => {deny('media playback');};
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function(...args) {
+    if (this.tagName !== 'VIDEO' || this.id !== 'camera' || !this.muted ||
+        (this.srcObject && this.srcObject.getAudioTracks().length)) deny('media playback');
+    if (!this.srcObject) return Promise.resolve();
+    return play.apply(this, args);
+  };
   if (navigator.mediaDevices) {
     navigator.mediaDevices.getUserMedia = async constraints => {
       window.cameraRequests++;
