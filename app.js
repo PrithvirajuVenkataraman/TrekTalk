@@ -40,6 +40,7 @@ function view(next) {
 function hint(message) { $('pairHint').textContent = message; }
 function optics(mode, message = '') {
   $('optics').dataset.mode = mode;
+  $('optics').dataset.busy = String(/^(Creating|Starting)/.test(message));
   $('optics').dataset.read = String(message === 'QR scanned');
   $('joinQr').hidden = mode !== 'offer';
   $('guide').hidden = mode !== 'scan';

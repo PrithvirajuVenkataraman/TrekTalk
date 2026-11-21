@@ -170,6 +170,10 @@ try{
   assert.equal(await host.locator('#scanList li[data-state=connected]').count(),9);
   await host.click('#go');
   for(const page of pages) assert.equal(await page.locator('#targets button').count(),10);
+  if (process.env.TREKTALK_SCREENSHOTS) {
+    const png = await host.screenshot({fullPage:true});
+    console.log('SCREENSHOT_RADIO ' + png.toString('base64'));
+  }
   await transmit(host,'Signal everyone',pages.slice(1).map((_,i)=>i+1));
   await transmit(iphone,'Signal Hiker 10',[9]);
 

@@ -36,6 +36,8 @@ jobs:
           TREKTALK_SCREENSHOTS: /tmp/trektalk-ui
       - name: Test ten silent devices with microphone and audio playback blocked
         run: node tests/browser-group.mjs
+        env:
+          TREKTALK_SCREENSHOTS: /tmp/trektalk-ui
       - name: Test updates from cached v8 through v16 installations
         run: |
           for version in 8 9 10 11 12 13 14 15 15.1 16; do
