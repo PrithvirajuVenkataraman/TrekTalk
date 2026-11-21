@@ -60,6 +60,14 @@ jobs:
             node tests/browser-upgrade.mjs
           done
 
+      - name: Save mobile interface screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ui
+          path: /tmp/trektalk-ui
+          retention-days: 7
+
   mobile-browsers:
     runs-on: macos-latest
     timeout-minutes: 12

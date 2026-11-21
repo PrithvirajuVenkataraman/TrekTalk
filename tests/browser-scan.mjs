@@ -114,18 +114,15 @@ try {
     await page.goto(site);
     await page.getByText('Ready offline · v17',{exact:true}).waitFor();
     await page.fill('#name','Prithvi');
-    const home = await page.screenshot({path:path.join(dir,'home.png'),fullPage:true});
-    console.log('SCREENSHOT_HOME '+home.toString('base64'));
+    await page.screenshot({path:path.join(dir,'home.png'),fullPage:true});
     await page.click('#host');
     await page.locator('#joinQr').waitFor({state:'visible'});
-    const host = await page.screenshot({path:path.join(dir,'host.png'),fullPage:true});
-    console.log('SCREENSHOT_HOST '+host.toString('base64'));
+    await page.screenshot({path:path.join(dir,'host.png'),fullPage:true});
     await page.locator('#tools summary').click();await page.click('#leave');
     await page.evaluate(()=>{window.scene={width:720,height:1280,size:.62,angle:0};});
     await page.click('#guest');
     await page.locator('#guide').waitFor({state:'visible'});
-    const scan = await page.screenshot({path:path.join(dir,'scanner.png'),fullPage:true});
-    console.log('SCREENSHOT_SCANNER '+scan.toString('base64'));
+    await page.screenshot({path:path.join(dir,'scanner.png'),fullPage:true});
   }
   assert.deepEqual(errors,[]);
   console.log('PASS: visible QR detection in ms '+timings.join(', ')+'; all seven cases under 2 seconds');

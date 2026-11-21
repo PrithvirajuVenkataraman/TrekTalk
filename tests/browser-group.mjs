@@ -1,6 +1,6 @@
 import {fileURLToPath} from 'node:url';
 import {createRequire} from 'node:module';
-import {readFile} from 'node:fs/promises';
+import {readFile, mkdir} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -171,8 +171,8 @@ try{
   await host.click('#go');
   for(const page of pages) assert.equal(await page.locator('#targets button').count(),10);
   if (process.env.TREKTALK_SCREENSHOTS) {
-    const png = await host.screenshot({fullPage:true});
-    console.log('SCREENSHOT_RADIO ' + png.toString('base64'));
+    await mkdir(process.env.TREKTALK_SCREENSHOTS, {recursive:true});
+    await host.screenshot({path:path.join(process.env.TREKTALK_SCREENSHOTS,'radio.png'), fullPage:true});
   }
   await transmit(host,'Signal everyone',pages.slice(1).map((_,i)=>i+1));
   await transmit(iphone,'Signal Hiker 10',[9]);
