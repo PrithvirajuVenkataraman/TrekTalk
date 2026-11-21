@@ -1,26 +1,12 @@
-import {roomNumber, drawCode} from './radio/pairing.mjs?v=15.1';
-import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=15.1';
-import {Link} from './radio/link.mjs?v=15.1';
-import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=15.1';
-import {Scanner} from './radio/scanner.mjs?v=15.1';
+import {openRearCamera} from './radio/camera.mjs?v=16';
+import {roomNumber, drawCode} from './radio/pairing.mjs?v=16';
+import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=16';
+import {Link} from './radio/link.mjs?v=16';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=16';
+import {Scanner} from './radio/scanner.mjs?v=16';
 
 const $ = id => document.getElementById(id);
-async function openRearCamera() {
-  if (!navigator.mediaDevices.getSupportedConstraints().facingMode) {
-    throw Error('This browser cannot select a rear camera. Open TrekTalk in Safari or Chrome on your phone.');
-  }
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {facingMode: {exact: 'environment'}, width: {ideal: 1280}, height: {ideal: 960}},
-    audio: false
-  });
-  const track = stream.getVideoTracks()[0];
-  const facing = track?.getSettings().facingMode;
-  if (!track || (facing && facing !== 'environment')) {
-    stream.getTracks().forEach(t => t.stop());
-    throw Error('Rear camera unavailable. Check that your browser can use the rear camera.');
-  }
-  return stream;
-}
+
 let current;
 let page = 'home';
 // This tag lasts for this page load. It only matches refreshed invitations in the host list.
@@ -96,14 +82,13 @@ class Session {
     $('go').disabled = true;
     optics('wait', this.host ? 'Creating group QR…' : 'Starting rear camera…');
     hint(this.host ? 'Preparing your group QR.' : 'Allow the rear camera to scan the group QR.');
-    if (!window.isSecureContext || (!this.host && !navigator.mediaDevices?.getUserMedia) || !window.RTCPeerConnection) {
+    if (!window.isSecureContext || !window.RTCPeerConnection) {
       throw Error('Open TrekTalk in Safari or Chrome using its HTTPS address.');
     }
+    let cameraError;
     if (!this.host) {
-      const stream = await openRearCamera();
-      const track = stream.getVideoTracks()[0];
-      if (this.closed) { track.stop(); return; }
-      await this.scanner.start(track);
+      try { await this.restartCamera(); }
+      catch (error) { cameraError = errorText(error); }
       if (this.closed) return;
     }
     this.leaseTimer = setInterval(() => {
@@ -115,8 +100,13 @@ class Session {
       this.room.publish();
       await this.showGroup();
     } else {
-      optics('scan');
-      hint('Point the rear camera at the host’s group QR.');
+      if (cameraError) {
+        optics('wait', 'Camera unavailable');
+        hint(cameraError + ' Use Options to restart the rear camera or read a QR photo.');
+      } else {
+        optics('scan');
+        hint('Point the rear camera at the host’s group QR.');
+      }
     }
   }
   async wake() {
@@ -127,7 +117,7 @@ class Session {
     } catch {}
   }
   async restartCamera() {
-    if (this.host || this.closed || page !== 'pair' || this.restarting) return;
+    if (this.host || this.closed || page !== 'pair' || this.restarting || this.guestAttempt) return;
     this.restarting = true;
     try {
       this.scanner.stop();
@@ -135,6 +125,13 @@ class Session {
       const track = stream.getVideoTracks()[0];
       if (this.closed || page !== 'pair') { track.stop(); return; }
       await this.scanner.start(track);
+      if (this.closed) return;
+      track.onended = () => {
+        if (this.closed || this.guestAttempt || page !== 'pair') return;
+        this.scanner.stop();
+        optics('wait', 'Rear camera stopped');
+        hint('Use Options to restart the rear camera or read a QR photo.');
+      };
     } finally { this.restarting = false; }
   }
   drop(attempt) {
@@ -511,7 +508,7 @@ try { $('name').value = localStorage.getItem('trektalk-name') || ''; } catch {}
 $('host').onclick = () => start(true);
 $('guest').onclick = () => start(false);
 $('go').onclick = () => current?.go();
-$('refreshOffer').onclick = () => { $('tools').open = false; current?.showGroup(); };
+$('refreshOffer').onclick = () => { $('tools').open = false; current?.showGroup().catch(error => hint(errorText(error))); };
 $('leave').onclick = () => end();
 $('add').onclick = () => current?.addPhone().catch(e => hint(errorText(e)));
 $('retryCamera').onclick = async () => {
@@ -520,7 +517,7 @@ $('retryCamera').onclick = async () => {
   if (!s) return;
   try {
     await s.restartCamera();
-    if (s === current && page === 'pair' && !s.guestAttempt) {
+    if (s === current && page === 'pair' && !s.guestAttempt && s.scanner.track) {
       optics('scan');
       hint('Scan the host group QR.');
     }
@@ -543,7 +540,7 @@ $('targets').onpointerdown = e => {
   const button = e.target.closest('button[data-target]');
   if (!button || !e.isPrimary || e.button !== 0) return;
   e.preventDefault();
-  button.setPointerCapture(e.pointerId);
+  try { button.setPointerCapture(e.pointerId); } catch {}
   current?.press(button.dataset.target, e.pointerId);
 };
 for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
@@ -567,8 +564,8 @@ async function prepareOffline() {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
   const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
   const markReady = async () => {
-    const hit = await caches.match(new URL('./__trektalk_ready_v15.1__', location.href).href, {cacheName: 'trektalk-v15.1'});
-    if (hit) $('offline').textContent = 'Ready offline · v15.1';
+    const hit = await caches.match(new URL('./__trektalk_ready_v16__', location.href).href, {cacheName: 'trektalk-v16'});
+    if (hit) $('offline').textContent = 'Ready offline · v16';
     return Boolean(hit);
   };
   if (await markReady()) return;

@@ -58,12 +58,21 @@ export class Link {
       check();
     };
     this.pc.ondatachannel = ({channel}) => attach(channel);
-    this.pc.onconnectionstatechange = () => {
-      clearTimeout(this.grace);
-      const state = this.pc.connectionState;
-      if (state === 'disconnected') this.grace = setTimeout(() => this.fail('Lost the hotspot connection.'), 4000);
-      if (state === 'failed' || state === 'closed') this.fail('The local connection ended.');
+    const connectionChanged = () => {
+      if (this.closed) return;
+      const connection = this.pc.connectionState;
+      const ice = this.pc.iceConnectionState;
+      if (connection === 'failed' || connection === 'closed' || ice === 'failed' || ice === 'closed') {
+        this.fail('The local connection ended.');
+      } else if (connection === 'disconnected' || ice === 'disconnected') {
+        this.grace ??= setTimeout(() => this.fail('Lost the hotspot connection.'), 4000);
+      } else {
+        clearTimeout(this.grace);
+        this.grace = null;
+      }
     };
+    this.pc.onconnectionstatechange = connectionChanged;
+    this.pc.oniceconnectionstatechange = connectionChanged;
     if (initiator) {
       attach(this.pc.createDataChannel('control', {ordered: true}));
     }
@@ -88,6 +97,7 @@ export class Link {
     this.closed = true;
     clearTimeout(this.grace);
     this.pc.onconnectionstatechange = null;
+    this.pc.oniceconnectionstatechange = null;
     this.pc.close();
   }
 }

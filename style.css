@@ -3,7 +3,7 @@
 [hidden]{display:none!important}
 body{margin:0;min-height:100vh;background:linear-gradient(155deg,#193a2d,#10251e 52%,#0b1c17)}
 main{max-width:540px;margin:auto;padding:env(safe-area-inset-top) clamp(16px,5vw,30px) max(28px,env(safe-area-inset-bottom))}
-header{display:flex;align-items:center;gap:9px;padding:20px 0 16px;border-bottom:1px solid #ffffff20;min-height:70px}
+header{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:20px 0 16px;border-bottom:1px solid #ffffff20;min-height:70px}
 .brand{font-weight:760;letter-spacing:-.035em;display:inline-flex;align-items:center;gap:8px;font-size:22px}
 .version,.meta,.small{color:#b2c6b8;font-size:13px}
 .version{margin-left:2px}
@@ -62,3 +62,7 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid
 #scanList [data-state=connected] span{color:#c6f08c}
 #scanList [data-state=ended] span{color:#c7cfc9}
 #pair:has(#scannedGuests:not([hidden])) .optics{width:min(100%,420px,43svh)}
+
+.targets button > span:first-child{min-width:0;overflow-wrap:anywhere}
+.targets .key{flex-shrink:0}
+#scanList span{max-width:180px;overflow-wrap:anywhere}

@@ -17,7 +17,11 @@ export class Scanner {
     const generation = this.sequence;
     this.track = track;
     this.video.srcObject = new MediaStream([track]);
-    await this.video.play();
+    try { await this.video.play(); }
+    catch (error) {
+      if (generation === this.sequence) this.stop();
+      throw error;
+    }
     if (generation !== this.sequence) return;
     this.started = performance.now();
     let frameNumber = 0;
@@ -30,7 +34,16 @@ export class Scanner {
           frameNumber++;
           let text;
           if (this.native && frameNumber % 3 !== 0) {
-            try { text = (await this.native.detect(this.video))[0]?.rawValue; }
+            try {
+              let timer;
+              try {
+                const detected = await Promise.race([
+                  this.native.detect(this.video),
+                  new Promise((_, reject) => { timer = setTimeout(() => reject(Error('QR detector timed out')), 200); })
+                ]);
+                text = detected[0]?.rawValue;
+              } finally { clearTimeout(timer); }
+            }
             catch { this.native = null; }
           }
           if (!text && (!this.native || frameNumber % 3 === 0)) {
@@ -76,7 +89,7 @@ export class Scanner {
     this.sequence++;
     clearTimeout(this.timer);
     this.video.srcObject = null;
-    this.track?.stop();
+    if (this.track) { this.track.onended = null; this.track.stop(); }
     this.track = null;
   }
 }
