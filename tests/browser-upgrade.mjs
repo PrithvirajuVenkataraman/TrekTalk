@@ -19,6 +19,9 @@ const server = createServer(async (req, res) => {
   try {
     const file = new URL(req.url, 'http://localhost').pathname.slice(1) || 'index.html';
     let body = await readFile(path.join(root, file));
+    if (root === currentRoot && file === 'sw.js') {
+      body = Buffer.concat([Buffer.from('AbortSignal.timeout = undefined;\n'), body]);
+    }
     if (req.url.includes('network-probe=1') && file === 'index.html') {
       body = Buffer.from(body.toString().replace('<html lang="en">', '<html lang="en" data-network-probe="loaded">'));
     }
@@ -43,9 +46,6 @@ try {
   await page.waitForFunction(async v => !(await caches.has('trektalk-v' + v)), previousVersion);
   // Older mobile browsers lack the static timeout helper. Online navigation
   // must still fetch the current page instead of silently serving cached HTML.
-  const worker = page.context().serviceWorkers().find(w => w.url().endsWith('/sw.js'));
-  assert.ok(worker);
-  await worker.evaluate(() => { AbortSignal.timeout = undefined; });
   await page.goto(site + '/?network-probe=1');
   assert.equal(await page.locator('html').getAttribute('data-network-probe'), 'loaded');
   online = false;

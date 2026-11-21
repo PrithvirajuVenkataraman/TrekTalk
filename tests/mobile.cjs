@@ -64,3 +64,18 @@ test('ICE state changes detect lost links even without connectionState events', 
   assert.equal(link.closed,true);
   assert.equal(link.pc.oniceconnectionstatechange,null);
 });
+
+test('missing local candidates identify permission recovery instead of a generic connection failure', async t => {
+  t.after(() => {delete globalThis.RTCPeerConnection;});
+  globalThis.RTCPeerConnection = class extends EventTarget {
+    constructor(){super();this.iceGatheringState='complete';this.signalingState='stable';}
+    createDataChannel(){return {label:'control',readyState:'connecting'};}
+    async createOffer(){return {type:'offer',sdp:'v=0\r\n'};}
+    async setLocalDescription(description){this.localDescription=description;}
+    close(){this.signalingState='closed';}
+  };
+  const {Link} = await import('../radio/link.mjs');
+  const link = new Link({initiator:true,ready:()=>{},control:()=>{},lost:()=>{}});
+  await assert.rejects(link.offer(), {code:'NO_LOCAL_ADDRESS'});
+  link.close();
+});

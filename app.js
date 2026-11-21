@@ -225,11 +225,12 @@ class Session {
       });
       guestTag ??= newId().slice(0,12);
       const request={id:a.invite,guest:{tag:guestTag,name:this.name,device:deviceLabel()},sdp};
+      const startedAt = performance.now();
       let nextSend=0;
       const check=async()=>{
         if(this.closed || this.guestAttempt!==a)return;
         try {
-          if(performance.now()-a.readAt>35000)throw Error('Host did not confirm. Check both phones use the same pairing service and hotspot.');
+          if(performance.now()-startedAt>35000)throw Error('Host did not confirm. Check both phones use the same pairing service and hotspot.');
           if(performance.now()>=nextSend){
             await inbox.send(request);
             nextSend=performance.now()+1600+Math.random()*1400;
