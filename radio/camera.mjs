@@ -3,7 +3,7 @@ export async function openRearCamera(media = navigator.mediaDevices) {
     throw Error('This browser cannot select a rear camera. Use Options to read a QR photo, or open TrekTalk in your phone browser.');
   }
   const stream = await media.getUserMedia({
-    video: {facingMode: {exact:'environment'}},
+    video: {facingMode: {exact:'environment'}, width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:24}},
     audio: false
   });
   const track = stream.getVideoTracks()[0];

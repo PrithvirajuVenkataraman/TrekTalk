@@ -1,9 +1,9 @@
-import {openRearCamera} from './radio/camera.mjs?v=16';
-import {roomNumber, drawCode} from './radio/pairing.mjs?v=16';
-import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=16';
-import {Link} from './radio/link.mjs?v=16';
-import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=16';
-import {Scanner} from './radio/scanner.mjs?v=16';
+import {openRearCamera} from './radio/camera.mjs?v=17';
+import {roomNumber, drawCode} from './radio/pairing.mjs?v=17';
+import {mailbox, newId, pairingURL} from './radio/signaling.mjs?v=17';
+import {Link} from './radio/link.mjs?v=17';
+import {Room, HOST, ALL, CAPACITY, displayName} from './radio/room.mjs?v=17';
+import {Scanner} from './radio/scanner.mjs?v=17';
 
 const $ = id => document.getElementById(id);
 
@@ -27,6 +27,8 @@ function deviceLabel() {
 
 function view(next) {
   page = next;
+  document.querySelector('main').dataset.role = current?.host ? 'host' : 'guest';
+  document.body.dataset.page = next;
   for (const id of ['home', 'pair', 'radio']) $(id).hidden = id !== next;
   $('tools').hidden = next === 'home';
   $('tools').open = false;
@@ -37,6 +39,8 @@ function view(next) {
 }
 function hint(message) { $('pairHint').textContent = message; }
 function optics(mode, message = '') {
+  $('optics').dataset.mode = mode;
+  $('optics').dataset.read = String(message === 'QR scanned');
   $('joinQr').hidden = mode !== 'offer';
   $('guide').hidden = mode !== 'scan';
   $('preparing').hidden = mode !== 'wait';
@@ -586,8 +590,8 @@ async function prepareOffline() {
   if (!('serviceWorker' in navigator) || !('caches' in window)) throw Error();
   const reg = await navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'});
   const markReady = async () => {
-    const hit = await caches.match(new URL('./__trektalk_ready_v16__', location.href).href, {cacheName: 'trektalk-v16'});
-    if (hit) $('offline').textContent = 'Ready offline · v16';
+    const hit = await caches.match(new URL('./__trektalk_ready_v17__', location.href).href, {cacheName: 'trektalk-v17'});
+    if (hit) $('offline').textContent = 'Ready offline · v17';
     return Boolean(hit);
   };
   if (await markReady()) return;

@@ -9,7 +9,7 @@ const {chromium} = createRequire(import.meta.url)('playwright-core');
 const currentRoot = fileURLToPath(new URL('../', import.meta.url));
 const previousRoot = process.env.TREKTALK_PREVIOUS_ROOT;
 const previousVersion = process.env.TREKTALK_PREVIOUS_VERSION;
-assert.ok(previousRoot && ['8','9','10','11','12','13','14','15','15.1'].includes(previousVersion), 'Specify the old release directory and version');
+assert.ok(previousRoot && ['8','9','10','11','12','13','14','15','15.1','16'].includes(previousVersion), 'Specify the old release directory and version');
 let root = previousRoot;
 let online = true;
 const types = {'.js':'text/javascript', '.mjs':'text/javascript', '.html':'text/html',
@@ -41,8 +41,8 @@ try {
 
   // Simulate a deployment while this phone still has the old cache and worker.
   root = currentRoot;
-  await page.goto(site + '/?update=16');
-  await page.getByText('Ready offline · v16', {exact:true}).waitFor();
+  await page.goto(site + '/?update=17');
+  await page.getByText('Ready offline · v17', {exact:true}).waitFor();
   await page.waitForFunction(async v => !(await caches.has('trektalk-v' + v)), previousVersion);
   // Older mobile browsers lack the static timeout helper. Online navigation
   // must still fetch the current page instead of silently serving cached HTML.
@@ -50,10 +50,10 @@ try {
   assert.equal(await page.locator('html').getAttribute('data-network-probe'), 'loaded');
   online = false;
   await page.reload();
-  await page.getByText('Ready offline · v16', {exact:true}).waitFor();
+  await page.getByText('Ready offline · v17', {exact:true}).waitFor();
   const controls = await page.getByRole('button').allTextContents();
   assert.ok(controls.includes('Host a group') && controls.includes('Scan a QR code'));
-  console.log('PASS: upgraded v' + previousVersion + ' to v16 and reopened offline');
+  console.log('PASS: upgraded v' + previousVersion + ' to v17 and reopened offline');
 } finally {
   await browser?.close();
   server.close();

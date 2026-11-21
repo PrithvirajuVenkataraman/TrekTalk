@@ -4,7 +4,7 @@ TrekTalk connects up to ten phones on the same Wi-Fi network. A participant can 
 
 ## Join
 
-1. Open TrekTalk v16 on each phone before the trek. Wait for **Ready offline · v16** and connect all phones to the same Wi-Fi or hotspot.
+1. Open TrekTalk v17 on each phone before the trek. Wait for **Ready offline · v17** and connect all phones to the same Wi-Fi or hotspot.
 2. Tap **Host a group** to create a fresh group QR. Keep the QR visible while people join.
 3. Each guest taps **Scan a QR code** and scans the host QR once with the rear camera. The host sees their name and connection status below the QR. Guests enter the group automatically.
 4. Tap **Open group** on the host. Hold **Signal everyone** or an individual person’s button. The selected phones display the sender’s name until release. Keep TrekTalk in the foreground.
@@ -33,8 +33,16 @@ Run `node --test tests/*.cjs` for routing and mailbox checks. The browser workfl
 
 The browser workflow tests Chromium, Firefox and WebKit on macOS in all nine host and guest combinations. These tests use QR photo import with simulated camera failures, real WebRTC data channels, touch press cancellation, cached offline startup and layouts at 320, 568 and 768 pixels with enlarged text. The separate ten participant test uses rear camera video fixtures and simultaneous joins.
 
-Camera errors keep the guest on the pairing screen. Options can restart the rear camera or read a QR photo. The scanner falls back to its bundled decoder if the native detector fails or takes longer than 200 milliseconds. All camera requests require the rear camera.
+Camera errors keep the guest on the pairing screen. Options can restart the rear camera or read a QR photo. The scanner falls back to its bundled decoder if the native detector fails or takes longer than 80 milliseconds. All camera requests require the rear camera.
 
 Use a current browser with WebRTC, HTTPS and Web Crypto. Embedded browsers can restrict these features. Test physical Android and iOS devices before relying on the app on a trek. Phones must remain on a shared network with peer traffic enabled and keep the app in the foreground. Browser tests cannot certify every handset, operating system version or hotspot.
 
 If no local address is available, the app retries once after a rear camera permission check. This handles browser restrictions on local WebRTC addresses. Hosts keep showing their QR and never need to scan a guest. Denied access is reported with instructions to change browser settings.
+
+## QR detection and interface
+
+The live scanner first reads a 360 pixel square crop aligned with the visible camera preview. It checks a higher resolution crop and the full frame when needed. Rear camera requests prefer 1280 by 720 video at 24 frames per second. These values are optional camera preferences.
+
+The QR timing test measures from the first presented QR image to the on-screen QR scanned state. It covers landscape and portrait camera frames, rotated codes, smaller codes, and a stalled native decoder. Each test must complete in under two seconds. This measures recognition separately from camera permission, camera startup and the WebRTC connection. Physical phone focus, lighting and processing speed still affect recognition.
+
+The home actions share one card. The host screen groups QR refresh, the code, guest status and the primary action together. The group screen keeps the broadcast button above individual controls.

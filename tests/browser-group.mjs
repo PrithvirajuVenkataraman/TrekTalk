@@ -95,14 +95,14 @@ try{
     await ctx.addInitScript(installMediaFixtures);
     const p=await ctx.newPage();
     p.on('pageerror',e=>console.log('PAGE ERROR',name,e.message));p.on('console',m=>{if(m.type()==='error')console.log('CONSOLE',name,m.text());});
-    await p.goto(site);await p.getByText('Ready offline · v16').waitFor({timeout:10000});await p.fill('#name',name);return p;
+    await p.goto(site);await p.getByText('Ready offline · v17').waitFor({timeout:10000});await p.fill('#name',name);return p;
   }
   const host=await phone('OnePlus'),iphone=await phone('iPhone'),third=await phone('Arun');
   pages.push(host,iphone,third);
   const more=[];
   for(let i=4;i<=10;i++) more.push(await phone('Hiker '+i));
   online=false;
-  await iphone.reload();await iphone.getByText('Ready offline · v16').waitFor();await iphone.fill('#name','');
+  await iphone.reload();await iphone.getByText('Ready offline · v17').waitFor();await iphone.fill('#name','');
   await host.evaluate(()=>{window.isTestHost=true;});
   await host.click('#host');
   assert.equal(await host.evaluate(()=>window.cameraRequests),0);

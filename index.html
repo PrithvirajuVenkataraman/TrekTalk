@@ -3,68 +3,83 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#10251e">
-  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#f4f5ef">
+  <meta name="color-scheme" content="light">
   <title>TrekTalk</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" href="./icon.svg">
-  <link rel="stylesheet" href="./style.css?v=16">
+  <link rel="stylesheet" href="./style.css?v=17">
 </head>
-<body>
+<body data-page="home">
 <main>
   <header>
-    <span class="brand"><img src="./icon.svg" alt="" width="34" height="34">TrekTalk</span>
-    <span class="version">v16</span>
+    <span class="brand"><span class="brandIcon"><img src="./icon.svg" alt="" width="25" height="25"></span>TrekTalk</span>
+    <span class="version">v17</span>
     <details id="tools" hidden>
       <summary>Options</summary>
       <div class="menu">
         <p id="pairTiming" class="small" hidden></p>
         <button id="photo" type="button">Read QR from photo</button>
-        <button id="refreshOffer" type="button" hidden>Refresh group QR</button>
         <button id="retryCamera" type="button">Restart rear camera</button>
         <button id="leave" type="button">Leave group</button>
       </div>
     </details>
   </header>
   <section id="home">
-    <h1>Group signals</h1>
-    <p>Join the same hotspot. For new connections, use Vercel online or a local service offline.</p>
-    <details id="pairSettings"><summary>Pairing settings</summary>
+    <div class="intro">
+      <h1>Connect your<br>group.</h1>
+      <p>Connect everyone to the same Wi-Fi or hotspot.</p>
+    </div>
+    <div class="homeCard">
+      <label for="name">Your name</label>
+      <input id="name" type="text" maxlength="24" placeholder="How should we call you?" autocomplete="nickname">
+      <div class="startActions">
+        <button id="host" class="primary" type="button">Host a group</button>
+        <button id="guest" type="button">Scan a QR code</button>
+      </div>
+    </div>
+    <p id="offline" class="offline small" role="status">Saving files for offline use…</p>
+    <p id="notice" role="alert"></p>
+    <details id="pairSettings">
+      <summary>Pairing settings</summary>
       <label for="relay">Local pairing service (optional)</label>
       <input id="relay" type="text" inputmode="url" placeholder="https://radio.local:8443" autocapitalize="none" spellcheck="false">
-      <p class="small">For offline joining, enter the same local HTTPS service on all phones. An empty field uses Vercel and needs internet to join. Group signals use the hotspot.</p>
+      <p class="small">Internet is needed to join through the default service. For offline joining, enter the same local HTTPS service on every phone. Connected phones use the shared hotspot.</p>
     </details>
-    <label for="name">Your name</label>
-    <input id="name" type="text" maxlength="24" placeholder="Name in the group" autocomplete="nickname">
-    <div class="startActions">
-      <button id="host" class="primary" type="button">Host a group</button>
-      <button id="guest" type="button">Scan a QR code</button>
-    </div>
-    <p id="offline" class="small" role="status">Saving files for offline use…</p>
-    <p id="notice" role="alert"></p>
   </section>
   <section id="pair" hidden>
-    <div id="pairMeta" class="meta"></div>
-    <h1 id="pairTitle">Pair phones</h1>
-    <p id="pairHint" aria-live="polite"></p>
-    <div class="optics" id="optics">
-      <video id="camera" muted playsinline autoplay aria-label="Camera preview"></video>
-      <div id="guide" aria-hidden="true"></div>
-      <canvas id="joinQr" class="qrCard" aria-label="Group QR code" hidden></canvas>
-      <div id="preparing" aria-live="polite">Starting camera…</div>
+    <div class="sectionHeading">
+      <div id="pairMeta" class="meta"></div>
+      <h1 id="pairTitle">Pair phones</h1>
+      <p id="pairHint" aria-live="polite"></p>
     </div>
-    <div id="scannedGuests" hidden>
-      <h2>Scanned guests <span id="scanCount">0</span></h2>
-      <p id="noScans">No guests scanned yet.</p>
-      <ul id="scanList" aria-label="Scanned guests" aria-live="polite" aria-relevant="additions text"></ul>
+    <div class="pairCard">
+      <div class="pairToolbar">
+        <button id="refreshOffer" type="button" hidden>Refresh group QR</button>
+      </div>
+      <div class="optics" id="optics">
+        <video id="camera" muted playsinline autoplay aria-label="Rear camera preview"></video>
+        <div id="guide" aria-hidden="true"></div>
+        <canvas id="joinQr" class="qrCard" aria-label="Group QR code" hidden></canvas>
+        <div id="preparing" aria-live="polite">Starting camera…</div>
+      </div>
+      <div id="scannedGuests" hidden>
+        <h2>Scanned guests <span id="scanCount">0</span></h2>
+        <p id="noScans">No guests scanned yet.</p>
+        <ul id="scanList" aria-label="Scanned guests" aria-live="polite" aria-relevant="additions text"></ul>
+      </div>
+      <div class="pairActions">
+        <button id="go" class="primary" type="button" hidden disabled>Open group</button>
+      </div>
     </div>
-    <button id="go" class="primary" type="button" hidden disabled>Open group</button>
   </section>
   <section id="radio" hidden>
-    <div id="roomMeta" class="meta"></div>
-    <h1>Group signals</h1>
+    <div class="sectionHeading">
+      <div id="roomMeta" class="meta"></div>
+      <h1>Group signals</h1>
+      <p class="usage">Hold to signal. Release to clear.</p>
+    </div>
     <div id="channel" class="channel" data-mode="idle" role="status" aria-live="polite"><i></i><span id="channelLabel">Ready</span></div>
-    <p class="usage">Hold a button to show your signal on the selected phones. Release to clear it.</p>
     <div id="targets" class="targets"></div>
     <button id="add" type="button" class="plain" hidden>Pair another phone</button>
   </section>
@@ -72,6 +87,6 @@
 </main>
 <script src="./vendor/qr.js"></script>
 <script src="./vendor/scan.js"></script>
-<script type="module" src="./app.js?v=16"></script>
+<script type="module" src="./app.js?v=17"></script>
 </body>
 </html>

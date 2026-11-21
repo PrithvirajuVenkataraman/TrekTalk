@@ -82,7 +82,7 @@ async function phone(engine, name) {
   const page = await context.newPage();
   page.on('pageerror', error => errors.push(engine + ': ' + error.message));
   await page.goto(site);
-  await page.getByText('Ready offline · v16', {exact:true}).waitFor({timeout:15000});
+  await page.getByText('Ready offline · v17', {exact:true}).waitFor({timeout:15000});
   await page.fill('#name', name);
   return page;
 }
@@ -141,7 +141,7 @@ try {
         await guest.click('#leave');
         await host.getByText('Waiting for another person.',{exact:true}).waitFor();
         await guest.reload();
-        await guest.getByText('Ready offline · v16',{exact:true}).waitFor();
+        await guest.getByText('Ready offline · v17',{exact:true}).waitFor();
         console.log('PASS: ' + hostEngine + ' host -> ' + guestEngine + ' guest, QR photo recovery, touch cancellation, offline signals and layouts');
       } catch (error) {
         console.error('PAIR',hostEngine,guestEngine);

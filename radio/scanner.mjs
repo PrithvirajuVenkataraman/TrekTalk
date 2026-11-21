@@ -32,34 +32,39 @@ export class Scanner {
         if (!document.hidden && this.video.readyState >= 2 && this.video.videoWidth && lastVideoTime !== this.video.currentTime) {
           lastVideoTime = this.video.currentTime;
           frameNumber++;
-          let text;
-          if (this.native && frameNumber % 3 !== 0) {
+          // Match the square camera preview first. A small central crop is much
+          // cheaper to decode than every pixel of a landscape camera frame.
+          let text = this.imageText(this.video, this.video.videoWidth, this.video.videoHeight, true, 360);
+          if (!text && frameNumber % 2 === 0) {
+            text = this.imageText(this.video, this.video.videoWidth, this.video.videoHeight, true, 640);
+          }
+          if (!text && this.native) {
             try {
               let timer;
               try {
                 const detected = await Promise.race([
                   this.native.detect(this.video),
-                  new Promise((_, reject) => { timer = setTimeout(() => reject(Error('QR detector timed out')), 200); })
+                  new Promise((_, reject) => { timer = setTimeout(() => reject(Error('QR detector timed out')), 80); })
                 ]);
                 text = detected[0]?.rawValue;
               } finally { clearTimeout(timer); }
             }
             catch { this.native = null; }
           }
-          if (!text && (!this.native || frameNumber % 3 === 0)) {
-            text = this.imageText(this.video, this.video.videoWidth, this.video.videoHeight, frameNumber % 2 === 0, 820);
+          if (!text) {
+            text = this.imageText(this.video, this.video.videoWidth, this.video.videoHeight, false, 640);
           }
           if (text && generation === this.sequence) this.read(text, (performance.now() - this.started) / 1000);
         }
       } catch {
         if (performance.now() - this.lastHint > 3000) { this.lastHint = performance.now(); this.warn('Camera frame unavailable. Keep TrekTalk in the foreground.'); }
       }
-      if (generation === this.sequence) this.timer = setTimeout(loop, 45);
+      if (generation === this.sequence) this.timer = setTimeout(loop, 25);
     };
     this.timer = setTimeout(loop, 0);
   }
   imageText(image, w, h, crop, limit) {
-    const cw = crop ? Math.min(w, h) * 0.85 : w;
+    const cw = crop ? Math.min(w, h) * 0.90 : w;
     const ch = crop ? cw : h;
     const scale = Math.min(1, limit / Math.max(cw, ch));
     const width = Math.max(1, Math.round(cw * scale));

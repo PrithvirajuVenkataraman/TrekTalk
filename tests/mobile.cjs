@@ -7,7 +7,8 @@ test('rear camera works without optional constraint reporting and rejects front 
   const track = {getSettings:()=>({facingMode:'environment'}), stop:()=>stopped++};
   const stream = {getVideoTracks:()=>[track], getTracks:()=>[track]};
   const media = {getUserMedia:async options => {
-    assert.deepEqual(options, {video:{facingMode:{exact:'environment'}}, audio:false});
+    assert.deepEqual(options.video.facingMode, {exact:'environment'});
+    assert.equal(options.audio, false);
     return stream;
   }};
   assert.equal(await openRearCamera(media), stream);
@@ -28,7 +29,8 @@ test('a stalled native QR detector falls back and rejected playback stops the re
   const decoded = new Promise(resolve => {
     scanner = new Scanner(video, text=>{scanner.stop();resolve(text);}, ()=>{});
   });
-  scanner.imageText = () => 'TREK14:0123456789ABCDEF0123456789ABCDEF';
+  let decodedFrames = 0;
+  scanner.imageText = () => ++decodedFrames > 1 ? 'TREK14:0123456789ABCDEF0123456789ABCDEF' : null;
   let stopped = 0;
   await scanner.start({stop:()=>stopped++});
   assert.equal(await Promise.race([decoded,new Promise(resolve=>setTimeout(()=>resolve('timeout'),1000))]),

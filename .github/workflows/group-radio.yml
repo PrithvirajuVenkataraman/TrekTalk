@@ -2,7 +2,7 @@ name: Group radio checks
 on:
   workflow_dispatch:
   push:
-    branches: [main, test/group-radio-v9, test/rear-camera, test/host-scan, test/scanned-guests, test/silent-join, test/no-audio, test/pairing-recovery, test/mobile-v16]
+    branches: [main, test/group-radio-v9, test/rear-camera, test/host-scan, test/scanned-guests, test/silent-join, test/no-audio, test/pairing-recovery, test/mobile-v16, test/scan-ui-v17]
     paths:
       - 'radio/**'
       - 'server/**'
@@ -10,6 +10,7 @@ on:
       - 'app.js'
       - 'index.html'
       - 'sw.js'
+      - 'style.css'
       - 'tests/**'
       - '.github/workflows/group-radio.yml'
 permissions:
@@ -29,11 +30,15 @@ jobs:
         run: node --test tests/*.cjs
       - name: Install test driver
         run: npm install --no-save --package-lock=false --ignore-scripts playwright-core@1.62.1
+      - name: Check visible QR detection within two seconds
+        run: node tests/browser-scan.mjs
+        env:
+          TREKTALK_SCREENSHOTS: /tmp/trektalk-ui
       - name: Test ten silent devices with microphone and audio playback blocked
         run: node tests/browser-group.mjs
-      - name: Test updates from cached v8 through v15.1 installations
+      - name: Test updates from cached v8 through v16 installations
         run: |
-          for version in 8 9 10 11 12 13 14 15 15.1; do
+          for version in 8 9 10 11 12 13 14 15 15.1 16; do
             export TREKTALK_PREVIOUS_VERSION="$version"
             export TREKTALK_PREVIOUS_ROOT="$RUNNER_TEMP/trektalk-v$version"
             case "$version" in
@@ -46,6 +51,7 @@ jobs:
               14) ref=bb274de1b191569a7c778859c91f7adbfdf97961 ;;
               15) ref=9e735a8647269a23994256b339301627699be0a6 ;;
               15.1) ref=2e40dfef4f0b4c9a8551c9031e0b306508fbcb74 ;;
+              16) ref=0e24820a26dc1fa252e8bab3026f46bdface24f2 ;;
             esac
             mkdir -p "$TREKTALK_PREVIOUS_ROOT"
             git archive "$ref" | tar -x -C "$TREKTALK_PREVIOUS_ROOT"
