@@ -1,6 +1,6 @@
 # TrekTalk
 
-TrekTalk connects up to ten phones on the same Wi-Fi network. A participant can hold a button to show a visual signal to one person or the group. The app never requests the microphone, sends voice or plays audio. Only guests need the camera to scan a QR.
+TrekTalk connects up to ten phones on the same Wi-Fi network. A participant can hold a button to show a visual signal to one person or the group. The app never requests the microphone, sends voice or plays audio. Guests scan the host QR with the rear camera. If a browser withholds local network addresses, either role may need rear camera access to enable the connection. The permission check closes the camera immediately.
 
 ## Join
 
@@ -36,3 +36,5 @@ The browser workflow tests Chromium, Firefox and WebKit on macOS in all nine hos
 Camera errors keep the guest on the pairing screen. Options can restart the rear camera or read a QR photo. The scanner falls back to its bundled decoder if the native detector fails or takes longer than 200 milliseconds. All camera requests require the rear camera.
 
 Use a current browser with WebRTC, HTTPS and Web Crypto. Embedded browsers can restrict these features. Test physical Android and iOS devices before relying on the app on a trek. Phones must remain on a shared network with peer traffic enabled and keep the app in the foreground. Browser tests cannot certify every handset, operating system version or hotspot.
+
+If no local address is available, the app retries once after a rear camera permission check. This handles browser restrictions on local WebRTC addresses. Hosts keep showing their QR and never need to scan a guest. Denied access is reported with instructions to change browser settings.

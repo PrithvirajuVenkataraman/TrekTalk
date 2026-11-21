@@ -178,6 +178,30 @@ class Session {
     if (!match) { hint('Scan the TrekTalk group QR on the host phone.'); return; }
     this.joinGroup(match[1].toLowerCase());
   }
+  async describeLink(attempt, options, offer) {
+    const describe = () => offer ? attempt.link.answer(offer) : attempt.link.offer();
+    attempt.link = new Link(options);
+    try { return await describe(); }
+    catch (error) {
+      if (error.code !== 'NO_LOCAL_ADDRESS' || this.closed ||
+          (this.host ? attempt.phase !== 'linking' : this.guestAttempt !== attempt)) throw error;
+      attempt.link.close();
+      hint('This browser needs rear camera access to enable local connections. Allow access when asked. The camera closes after the check.');
+      // Share one permission request if several guests join the same host together.
+      this.networkAccess ??= openRearCamera().then(stream => {
+        stream.getTracks().forEach(track => track.stop());
+      }).catch(() => {
+        this.networkAccess = null;
+        throw Error('Allow rear camera access in browser settings to enable local connections, then retry.');
+      });
+      await this.networkAccess;
+      if (this.closed || (this.host ? attempt.phase !== 'linking' : this.guestAttempt !== attempt)) {
+        throw Error('Pairing ended.');
+      }
+      attempt.link = new Link(options);
+      return describe();
+    }
+  }
   async joinGroup(group) {
     const a={invite:newId(), readAt:performance.now()};
     this.guestAttempt=a;
@@ -189,7 +213,7 @@ class Session {
       const inbox=await mailbox(group,'join',this.serviceURL,this.abort.signal);
       const reply=await mailbox(group,a.invite,this.serviceURL,this.abort.signal);
       if (this.closed || this.guestAttempt !== a) return;
-      a.link=new Link({
+      const sdp=await this.describeLink(a, {
         initiator:true,
         ready:()=>a.link.send({op:'hello',version:14,name:this.name}),
         control:msg=>{
@@ -199,7 +223,6 @@ class Session {
         },
         lost:reason=>this.guestLost(a,reason)
       });
-      const sdp=await a.link.offer();
       guestTag ??= newId().slice(0,12);
       const request={id:a.invite,guest:{tag:guestTag,name:this.name,device:deviceLabel()},sdp};
       let nextSend=0;
@@ -266,12 +289,10 @@ class Session {
       }
       a.reply = reply;
       a.entry = this.showScan(invite, guest);
-      a.link = new Link({
+      const answer=await this.describeLink(a, {
         initiator: false, ready: () => {}, control: msg => this.fromGuest(a, msg),
         lost: reason => this.hostLost(a, reason)
-      });
-      a.link.invite = invite;
-      const answer=await a.link.answer({type:'offer',sdp});
+      }, {type:'offer',sdp});
       if(this.closed || a.phase!=='linking')return;
       await reply.send({sdp:answer});
       if(a.phase==='linking')a.timeout=setTimeout(()=>this.hostLost(a,'No local connection. Check the shared hotspot.'),20000);

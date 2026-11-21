@@ -13,7 +13,7 @@ async function localDescription(pc, description) {
       pc.removeEventListener('signalingstatechange', changed);
       if (pc.signalingState === 'closed') reject(Error('Pairing ended.'));
       else if (hasCandidate()) resolve(snapshot());
-      else reject(Error('No local network address. Join the same hotspot, then retry.'));
+      else reject(Object.assign(Error('No local network address. Join the same hotspot, then retry.'), {code:'NO_LOCAL_ADDRESS'}));
     };
     const changed = () => {
       if (pc.signalingState === 'closed' || pc.iceGatheringState === 'complete') return finish();

@@ -47,13 +47,22 @@ function fixtures() {
     if (!this.srcObject) return Promise.resolve();
     return play.apply(this, args);
   };
+  const nativeCamera = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  let failedCamera = false;
+  window.cameraTracks = [];
   Object.defineProperty(navigator, 'mediaDevices', {configurable:true,value:{
     getSupportedConstraints:()=>({facingMode:true}),
     getUserMedia:async constraints => {
       window.cameraRequests++;
       if (constraints.audio !== false) deny('microphone');
       if (constraints.video?.facingMode?.exact !== 'environment') throw Error('Rear camera required');
-      throw new DOMException('Camera unavailable for recovery test', 'NotAllowedError');
+      if (!window.isTestHost && !failedCamera) {
+        failedCamera = true;
+        throw new DOMException('Camera unavailable for recovery test', 'NotAllowedError');
+      }
+      const stream = await nativeCamera(constraints);
+      window.cameraTracks.push(...stream.getTracks());
+      return stream;
     }
   }});
   const Peer = RTCPeerConnection;
@@ -95,6 +104,7 @@ try {
       const host = await phone(hostEngine, 'Guide');
       const guest = await phone(guestEngine, 'WWWWWWWWWWWWWWWWWWWWWWWW');
       try {
+        await host.evaluate(() => {window.isTestHost = true;});
         await host.click('#host');
         await host.locator('#joinQr').waitFor({state:'visible'});
         await guest.click('#guest');
@@ -122,7 +132,10 @@ try {
           }));
           assert.deepEqual(media,{audio:[],transceivers:0});
         }
-        assert.equal(await host.evaluate(()=>window.cameraRequests),0);
+        if (hostEngine !== 'webkit') assert.equal(await host.evaluate(()=>window.cameraRequests),0);
+        for (const p of [host, guest]) {
+          assert.equal(await p.evaluate(()=>window.cameraTracks.every(track=>track.readyState === 'ended')),true);
+        }
         // Offline cached startup is verified separately from live camera permission recovery.
         await guest.locator('#tools summary').click();
         await guest.click('#leave');
