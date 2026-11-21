@@ -47,14 +47,15 @@ function fixtures() {
     if (!this.srcObject) return Promise.resolve();
     return play.apply(this, args);
   };
-  if (navigator.mediaDevices) {
-    navigator.mediaDevices.getUserMedia = async constraints => {
+  Object.defineProperty(navigator, 'mediaDevices', {configurable:true,value:{
+    getSupportedConstraints:()=>({facingMode:true}),
+    getUserMedia:async constraints => {
       window.cameraRequests++;
       if (constraints.audio !== false) deny('microphone');
       if (constraints.video?.facingMode?.exact !== 'environment') throw Error('Rear camera required');
       throw new DOMException('Camera unavailable for recovery test', 'NotAllowedError');
-    };
-  }
+    }
+  }});
   const Peer = RTCPeerConnection;
   window.RTCPeerConnection = class extends Peer {
     constructor(config) {super(config);window.peerReports.push(this);}

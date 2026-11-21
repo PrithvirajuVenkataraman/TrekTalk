@@ -26,10 +26,13 @@ self.addEventListener('fetch', event => {
   if (req.mode === 'navigate' && (url.pathname === '/' || url.pathname === '/index.html')) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 1800);
       try {
-        const network = await fetch(req, {signal: AbortSignal.timeout(1800), cache: 'no-cache'});
+        const network = await fetch(req, {signal: controller.signal, cache: 'no-cache'});
         if (network.ok) return network;
       } catch {}
+      finally { clearTimeout(timer); }
       return await cache.match('./index.html') || Response.error();
     })());
     return;

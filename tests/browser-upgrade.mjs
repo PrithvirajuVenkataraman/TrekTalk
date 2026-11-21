@@ -18,7 +18,10 @@ const server = createServer(async (req, res) => {
   if (!online) { res.writeHead(503).end(); return; }
   try {
     const file = new URL(req.url, 'http://localhost').pathname.slice(1) || 'index.html';
-    const body = await readFile(path.join(root, file));
+    let body = await readFile(path.join(root, file));
+    if (req.url.includes('network-probe=1') && file === 'index.html') {
+      body = Buffer.from(body.toString().replace('<html lang="en">', '<html lang="en" data-network-probe="loaded">'));
+    }
     res.writeHead(200, {'Content-Type':types[path.extname(file)] || 'text/plain', 'Cache-Control':'no-cache'}).end(body);
   } catch { res.writeHead(404).end(); }
 });
@@ -38,6 +41,13 @@ try {
   await page.goto(site + '/?update=16');
   await page.getByText('Ready offline · v16', {exact:true}).waitFor();
   await page.waitForFunction(async v => !(await caches.has('trektalk-v' + v)), previousVersion);
+  // Older mobile browsers lack the static timeout helper. Online navigation
+  // must still fetch the current page instead of silently serving cached HTML.
+  const worker = page.context().serviceWorkers().find(w => w.url().endsWith('/sw.js'));
+  assert.ok(worker);
+  await worker.evaluate(() => { AbortSignal.timeout = undefined; });
+  await page.goto(site + '/?network-probe=1');
+  assert.equal(await page.locator('html').getAttribute('data-network-probe'), 'loaded');
   online = false;
   await page.reload();
   await page.getByText('Ready offline · v16', {exact:true}).waitFor();
